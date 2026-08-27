@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.poketrivia"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.4"
+        versionCode = 5
+        versionName = "0.5"
         buildConfigField("String", "GITHUB_REPOSITORY", "\"BearJ3rk/poketrivia-android-public\"")
     }
     buildFeatures { compose = true; buildConfig = true }

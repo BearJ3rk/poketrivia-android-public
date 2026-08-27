@@ -35,8 +35,8 @@ data class UiState(
     val livesRemaining: Int = RunMode.TWENTY_FIVE.lives,
     val elapsedMs: Long = 0,
     val cluesShown: Int = 1,
-    val musicEnabled: Boolean = true,
-    val criesEnabled: Boolean = true,
+    val musicVolume: Float = 0.75f,
+    val criesVolume: Float = 0.50f,
     val message: String? = null,
     val update: ReleaseResponse? = null
 )
@@ -46,8 +46,14 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     private val preferences = app.getSharedPreferences("poke_trivia_settings", 0)
     private val _state = MutableStateFlow(
         UiState(
-            musicEnabled = preferences.getBoolean("music_enabled", true),
-            criesEnabled = preferences.getBoolean("cries_enabled", true)
+            musicVolume = preferences.getFloat(
+                "music_volume",
+                if (preferences.getBoolean("music_enabled", true)) 0.75f else 0f
+            ),
+            criesVolume = preferences.getFloat(
+                "cries_volume",
+                if (preferences.getBoolean("cries_enabled", true)) 0.50f else 0f
+            )
         )
     )
     val state = _state.asStateFlow()
@@ -60,13 +66,15 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     fun navigate(screen: Screen) { _state.update { it.copy(screen = screen, message = null) } }
     fun setDifficulty(value: Difficulty) { _state.update { it.copy(difficulty = value) } }
-    fun setMusicEnabled(value: Boolean) {
-        preferences.edit().putBoolean("music_enabled", value).apply()
-        _state.update { it.copy(musicEnabled = value) }
+    fun setMusicVolume(value: Float) {
+        val volume = value.coerceIn(0f, 1f)
+        preferences.edit().putFloat("music_volume", volume).apply()
+        _state.update { it.copy(musicVolume = volume) }
     }
-    fun setCriesEnabled(value: Boolean) {
-        preferences.edit().putBoolean("cries_enabled", value).apply()
-        _state.update { it.copy(criesEnabled = value) }
+    fun setCriesVolume(value: Float) {
+        val volume = value.coerceIn(0f, 1f)
+        preferences.edit().putFloat("cries_volume", volume).apply()
+        _state.update { it.copy(criesVolume = volume) }
     }
     fun setRunMode(value: RunMode) {
         _state.update {
@@ -145,7 +153,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         accumulatedMs = 0L
         remainingPokemon.clear()
         sessionPool = emptyList()
-        _state.update { UiState(settings = it.settings, generations = it.generations, difficulty = it.difficulty, musicEnabled = it.musicEnabled, criesEnabled = it.criesEnabled) }
+        _state.update { UiState(settings = it.settings, generations = it.generations, difficulty = it.difficulty, musicVolume = it.musicVolume, criesVolume = it.criesVolume) }
     }
     fun saveScore(name: String) = viewModelScope.launch {
         val s = _state.value

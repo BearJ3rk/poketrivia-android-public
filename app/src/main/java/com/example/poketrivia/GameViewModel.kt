@@ -12,15 +12,15 @@ import kotlinx.coroutines.launch
 
 enum class Difficulty { EASY, HARD }
 enum class Screen { HOME, SETUP, GAME, RESULT, LEADERBOARD, SETTINGS }
-enum class RunMode(val label: String, val questionLimit: Int?, val lives: Int) {
-    TEN("10", 10, 1),
-    TWENTY_FIVE("25", 25, 2),
-    FIFTY("50", 50, 3),
-    ONE_HUNDRED("100", 100, 4),
-    ALL("All", null, 5),
-    ENDLESS("Endless", null, 6)
+enum class RunMode(val label: String, val questionLimit: Int?, val lives: Int, val selectable: Boolean = true) {
+    TEN("10", 10, 1, selectable = false),
+    TWENTY_FIVE("25", 25, 1),
+    FIFTY("50", 50, 2),
+    ONE_HUNDRED("100", 100, 3),
+    ALL("Entire Gen", null, 4),
+    ENDLESS("Endless - Every Pokemon Ever", null, 5)
 }
-data class GameSettings(val runMode: RunMode = RunMode.TEN)
+data class GameSettings(val runMode: RunMode = RunMode.TWENTY_FIVE)
 data class Question(val answer: PokemonResponse, val species: SpeciesResponse, val choices: List<PokemonResponse>, val clues: List<String>)
 data class UiState(
     val screen: Screen = Screen.HOME,
@@ -32,16 +32,24 @@ data class UiState(
     val index: Int = 0,
     val score: Int = 0,
     val availablePokemon: Int = 0,
-    val livesRemaining: Int = RunMode.TEN.lives,
+    val livesRemaining: Int = RunMode.TWENTY_FIVE.lives,
     val elapsedMs: Long = 0,
     val cluesShown: Int = 1,
+    val musicEnabled: Boolean = true,
+    val criesEnabled: Boolean = true,
     val message: String? = null,
     val update: ReleaseResponse? = null
 )
 
 class GameViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as TriviaApplication).repository
-    private val _state = MutableStateFlow(UiState())
+    private val preferences = app.getSharedPreferences("poke_trivia_settings", 0)
+    private val _state = MutableStateFlow(
+        UiState(
+            musicEnabled = preferences.getBoolean("music_enabled", true),
+            criesEnabled = preferences.getBoolean("cries_enabled", true)
+        )
+    )
     val state = _state.asStateFlow()
     val leaderboard = repo.scores.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private var sessionPool: List<String> = emptyList()
@@ -52,17 +60,25 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     fun navigate(screen: Screen) { _state.update { it.copy(screen = screen, message = null) } }
     fun setDifficulty(value: Difficulty) { _state.update { it.copy(difficulty = value) } }
+    fun setMusicEnabled(value: Boolean) {
+        preferences.edit().putBoolean("music_enabled", value).apply()
+        _state.update { it.copy(musicEnabled = value) }
+    }
+    fun setCriesEnabled(value: Boolean) {
+        preferences.edit().putBoolean("cries_enabled", value).apply()
+        _state.update { it.copy(criesEnabled = value) }
+    }
     fun setRunMode(value: RunMode) {
         _state.update {
             it.copy(
                 settings = GameSettings(value),
-                generations = if (value == RunMode.ALL || value == RunMode.ENDLESS) (1..9).toSet() else it.generations
+                generations = if (value == RunMode.ENDLESS) (1..9).toSet() else it.generations
             )
         }
     }
     fun toggleGeneration(value: Int) {
         _state.update { s ->
-            if (s.settings.runMode == RunMode.ALL || s.settings.runMode == RunMode.ENDLESS) s
+            if (s.settings.runMode == RunMode.ENDLESS) s
             else s.copy(generations = if (value in s.generations) s.generations - value else s.generations + value)
         }
     }
@@ -129,7 +145,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         accumulatedMs = 0L
         remainingPokemon.clear()
         sessionPool = emptyList()
-        _state.update { UiState(settings = it.settings, generations = it.generations, difficulty = it.difficulty) }
+        _state.update { UiState(settings = it.settings, generations = it.generations, difficulty = it.difficulty, musicEnabled = it.musicEnabled, criesEnabled = it.criesEnabled) }
     }
     fun saveScore(name: String) = viewModelScope.launch {
         val s = _state.value

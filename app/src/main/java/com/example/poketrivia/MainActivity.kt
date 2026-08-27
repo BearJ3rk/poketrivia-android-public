@@ -32,6 +32,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import java.util.Locale
@@ -56,6 +59,21 @@ class MainActivity : ComponentActivity() {
 @Composable fun PokeTriviaApp(vm: GameViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val cryPlayer = rememberCryPlayer()
+    val backgroundMusic = rememberBackgroundMusicPlayer()
+    val musicScreen = state.musicEnabled
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(musicScreen) { backgroundMusic.setEnabled(musicScreen) }
+    DisposableEffect(lifecycleOwner, backgroundMusic) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> backgroundMusic.onAppForeground()
+                Lifecycle.Event.ON_STOP -> backgroundMusic.onAppBackground()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Navy, Color(0xFF0D1D35)))).safeDrawingPadding()) {
         when (state.screen) {
             Screen.HOME -> HomeScreen(vm)
@@ -86,7 +104,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun SetupScreen(s: UiState, vm: GameViewModel) = Page("Build your run", { vm.navigate(Screen.HOME) }) {
     val regions = listOf("Kanto", "Johto", "Hoenn", "Sinnoh", "Unova", "Kalos", "Alola", "Galar", "Paldea")
-    val regionsLocked = s.settings.runMode == RunMode.ALL || s.settings.runMode == RunMode.ENDLESS
+    val regionsLocked = s.settings.runMode == RunMode.ENDLESS
     Label("DIFFICULTY")
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Difficulty.entries.forEach { ChoiceChip(it.name.lowercase().replaceFirstChar(Char::uppercase), s.difficulty == it) { vm.setDifficulty(it) } } }
     Spacer(Modifier.height(24.dp)); Label("GENERATIONS")
@@ -104,7 +122,7 @@ class MainActivity : ComponentActivity() {
     }
     Spacer(Modifier.height(16.dp))
     Label("POKÉMON PER RUN")
-    RunMode.entries.forEach { mode ->
+    RunMode.entries.filter { it.selectable }.forEach { mode ->
         Row(
             Modifier.fillMaxWidth().clickable { vm.setRunMode(mode) }.padding(vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -156,13 +174,13 @@ class MainActivity : ComponentActivity() {
         }
         LinearProgressIndicator(progress = { s.index.toFloat() / target.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(vertical = 14.dp))
         Text(if (s.difficulty == Difficulty.EASY) "Tap the Pokémon" else "Name that Pokémon", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
-        if (s.difficulty == Difficulty.EASY) EasyQuestion(q, vm, cryPlayer) else HardQuestion(q, s.cluesShown, vm)
+        if (s.difficulty == Difficulty.EASY) EasyQuestion(q, vm, cryPlayer, s.criesEnabled) else HardQuestion(q, s.cluesShown, vm)
     }
 }
 
-@Composable private fun ColumnScope.EasyQuestion(q: Question, vm: GameViewModel, cryPlayer: CryPlayer) {
+@Composable private fun ColumnScope.EasyQuestion(q: Question, vm: GameViewModel, cryPlayer: CryPlayer, criesEnabled: Boolean) {
     Text("Which one is ${q.answer.name.pretty()}?", color = Muted, fontSize = 17.sp, modifier = Modifier.padding(vertical = 14.dp))
-    q.choices.chunked(2).forEach { row -> Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { pokemon -> Card(onClick = { cryPlayer.play(pokemon.cries?.latest ?: pokemon.cries?.legacy); vm.answer(pokemon.name) }, modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 5.dp), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) { AsyncImage(pokemon.sprites.other.artwork.image, pokemon.name, Modifier.fillMaxSize().padding(10.dp), contentScale = ContentScale.Fit) } } } }
+    q.choices.chunked(2).forEach { row -> Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { pokemon -> Card(onClick = { if (criesEnabled) cryPlayer.play(pokemon.cries?.latest ?: pokemon.cries?.legacy); vm.answer(pokemon.name) }, modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 5.dp), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) { AsyncImage(pokemon.sprites.other.artwork.image, pokemon.name, Modifier.fillMaxSize().padding(10.dp), contentScale = ContentScale.Fit) } } } }
 }
 
 @Composable private fun HardQuestion(q: Question, cluesShown: Int, vm: GameViewModel) {
@@ -202,6 +220,10 @@ class MainActivity : ComponentActivity() {
 @Composable private fun SettingsScreen(s: UiState, vm: GameViewModel) {
     val context = LocalContext.current
     Page("Settings", { vm.navigate(Screen.HOME) }) {
+        Label("SOUND")
+        SettingSwitch("Background music", "Soft music on menus and during gameplay", s.musicEnabled, vm::setMusicEnabled)
+        SettingSwitch("Pokémon cries", "Play a Pokémon’s cry when its picture is tapped", s.criesEnabled, vm::setCriesEnabled)
+        HorizontalDivider(Modifier.padding(vertical = 20.dp), color = Color(0xFF28364A))
         Label("APP UPDATES")
         Text("Check GitHub for a newer release of PokéTrivia.", color = Muted, modifier = Modifier.padding(bottom = 16.dp))
         Button(vm::checkUpdates, Modifier.fillMaxWidth()) { Icon(Icons.Default.SystemUpdate, null); Spacer(Modifier.width(8.dp)); Text("CHECK FOR UPDATES") }
@@ -215,6 +237,16 @@ class MainActivity : ComponentActivity() {
 }
 @Composable private fun Label(text: String) = Text(text, color = Yellow, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp, modifier = Modifier.padding(bottom = 8.dp))
 @Composable private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) = FilterChip(selected, onClick, { Text(text) }, modifier, enabled = enabled)
+@Composable private fun SettingSwitch(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) = Row(
+    Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }.padding(vertical = 10.dp),
+    verticalAlignment = Alignment.CenterVertically
+) {
+    Column(Modifier.weight(1f)) {
+        Text(title, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(description, color = Muted, fontSize = 12.sp)
+    }
+    Switch(checked = checked, onCheckedChange = onCheckedChange)
+}
 @Composable private fun PokeballLives(count: Int, modifier: Modifier = Modifier) = Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
     repeat(count.coerceAtLeast(0)) {
         Canvas(Modifier.size(18.dp)) {
@@ -276,6 +308,49 @@ private class CryPlayer {
 
 @Composable private fun rememberCryPlayer(): CryPlayer {
     val player = remember { CryPlayer() }
+    DisposableEffect(player) { onDispose { player.release() } }
+    return player
+}
+
+private class BackgroundMusicPlayer(context: android.content.Context) {
+    private val mediaPlayer = MediaPlayer.create(context, R.raw.soft_adventure_loop)?.apply {
+        isLooping = true
+        setVolume(0.12f, 0.12f)
+    }
+    private var enabled = false
+    private var appInForeground = true
+
+    fun setEnabled(value: Boolean) {
+        enabled = value
+        updatePlayback()
+    }
+
+    fun onAppForeground() {
+        appInForeground = true
+        updatePlayback()
+    }
+
+    fun onAppBackground() {
+        appInForeground = false
+        mediaPlayer?.pause()
+    }
+
+    private fun updatePlayback() {
+        if (enabled && appInForeground) {
+            if (mediaPlayer?.isPlaying == false) mediaPlayer.start()
+        } else {
+            mediaPlayer?.pause()
+        }
+    }
+
+    fun release() {
+        mediaPlayer?.release()
+    }
+}
+
+@Composable private fun rememberBackgroundMusicPlayer(): BackgroundMusicPlayer {
+    val context = LocalContext.current
+    val player = remember(context) { BackgroundMusicPlayer(context.applicationContext) }
     DisposableEffect(player) { onDispose { player.release() } }
     return player
 }

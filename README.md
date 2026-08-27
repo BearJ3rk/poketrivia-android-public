@@ -7,8 +7,10 @@ A native, touch-first Pokémon trivia game built with Kotlin and Jetpack Compose
 - Generations 1–9 individually or in any combination
 - Easy mode with four official-artwork choices
 - Pokémon game-cry audio when a picture choice is tapped
+- Original soft creature-adventure music continues across every app screen
+- Persistent settings to independently disable background music and Pokémon cries
 - Hard mode with progressive description, height, shiny-color, and generation clues
-- 10, 25, 50, 100, All, and Endless runs with tiered Poké Ball lives
+- 25, 50, 100, Entire Gen, and Endless - Every Pokemon Ever runs with tiered Poké Ball lives
 - Millisecond-precision timed runs and an on-device leaderboard with score, time, format, and remaining lives
 - GitHub Releases update check
 - Live Pokémon data and artwork from [PokéAPI](https://pokeapi.co/)

@@ -5,8 +5,11 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.*
@@ -36,9 +39,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.FileProvider
 import coil3.compose.AsyncImage
+import java.io.File
+import java.net.URL
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val Navy = Color(0xFF09111F)
 private val Panel = Color(0xFF121E31)
@@ -116,22 +125,23 @@ class MainActivity : ComponentActivity() {
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     AsyncImage(
                         spotlight.pokemon.sprites.image ?: spotlight.pokemon.sprites.other.artwork.image,
                         spotlight.pokemon.name,
-                        Modifier.size(96.dp),
+                        Modifier.fillMaxWidth().height(190.dp),
                         contentScale = ContentScale.Fit
                     )
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                        Text("POKÉMON SPOTLIGHT", color = Yellow, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                        Text(spotlight.pokemon.name.pretty(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                        Text(spotlight.fact, color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 4)
-                        Text("Tap to view on Serebii.net", color = Blue, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
-                    }
+                    Text("POKÉMON SPOTLIGHT", color = Yellow, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                    Text(spotlight.pokemon.name.pretty(), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Text(spotlight.fact, color = Muted, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 4, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 5.dp))
+                    Text("Tap to view on Serebii.net", color = Blue, fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
                 }
             }
-        } ?: Box(Modifier.fillMaxWidth().height(124.dp), contentAlignment = Alignment.Center) {
+        } ?: Box(Modifier.fillMaxWidth().height(282.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(Modifier.size(30.dp))
         }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -253,12 +263,65 @@ class MainActivity : ComponentActivity() {
     val scores by vm.leaderboard.collectAsStateWithLifecycle()
     Page("Leaderboard", { vm.navigate(Screen.HOME) }) {
         if (scores.isEmpty()) Text("No scores yet. Your first run could take the crown.", color = Muted)
-        scores.forEachIndexed { i, item -> Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) { Text("${i + 1}", color = if (i < 3) Yellow else Muted, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.width(42.dp)); Column(Modifier.weight(1f)) { Text(item.player, color = Color.White, fontWeight = FontWeight.Bold); val mode = RunMode.entries.firstOrNull { it.name == item.runMode }; Text("${mode?.label ?: "Legacy"} • ${item.difficulty.lowercase().pretty()} • ${item.generation.split(',').size} gen", color = Muted, fontSize = 12.sp); PokeballLives(item.livesRemaining) }; Column(horizontalAlignment = Alignment.End) { Text("${item.score}", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black); Text(if (item.durationMs > 0) formatDuration(item.durationMs) else "—", color = Muted, fontSize = 12.sp) } } }
+        RunMode.entries.filter { it.selectable }.forEach { mode ->
+            val section = scores.filter { it.runMode == mode.name }
+                .sortedWith(compareByDescending<ScoreEntity> { it.score }.thenBy { if (it.durationMs > 0) it.durationMs else Long.MAX_VALUE })
+            Spacer(Modifier.height(18.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(mode.label.uppercase(), color = Yellow, fontSize = 15.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                PokeballLives(mode.lives)
+            }
+            HorizontalDivider(Modifier.padding(top = 7.dp, bottom = 5.dp), color = Color(0xFF28364A))
+            if (section.isEmpty()) {
+                Text("No scores yet", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 10.dp))
+            } else {
+                section.forEachIndexed { i, item -> LeaderboardRow(i, item) }
+            }
+        }
+    }
+}
+
+@Composable private fun LeaderboardRow(index: Int, item: ScoreEntity) = Row(
+    Modifier.fillMaxWidth().padding(vertical = 10.dp),
+    verticalAlignment = Alignment.CenterVertically
+) {
+    Text("${index + 1}", color = if (index < 3) Yellow else Muted, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.width(42.dp))
+    Column(Modifier.weight(1f)) {
+        Text(item.player, color = Color.White, fontWeight = FontWeight.Bold)
+        Text("${item.difficulty.lowercase().pretty()} • ${item.generation.split(',').size} gen", color = Muted, fontSize = 12.sp)
+        PokeballLives(item.livesRemaining)
+    }
+    Column(horizontalAlignment = Alignment.End) {
+        Text("${item.score}", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+        Text(if (item.durationMs > 0) formatDuration(item.durationMs) else "—", color = Muted, fontSize = 12.sp)
     }
 }
 
 @Composable private fun SettingsScreen(s: UiState, vm: GameViewModel) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var downloadingUpdate by remember { mutableStateOf(false) }
+    var downloadedUpdate by remember { mutableStateOf<File?>(null) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+    val unknownSourcesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        downloadedUpdate?.let { apk ->
+            if (context.packageManager.canRequestPackageInstalls()) installApk(context, apk)
+            else updateStatus = "Permission is still required to install updates."
+        }
+    }
+
+    fun beginInstall(apk: File) {
+        downloadedUpdate = apk
+        if (context.packageManager.canRequestPackageInstalls()) {
+            installApk(context, apk)
+        } else {
+            updateStatus = "Allow PokéTrivia to install updates, then return to the app."
+            unknownSourcesLauncher.launch(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+            )
+        }
+    }
+
     Page("Settings", { vm.navigate(Screen.HOME) }) {
         Label("SOUND")
         SettingVolume("Background music", "Music on every app screen", s.musicVolume, vm::setMusicVolume)
@@ -267,9 +330,65 @@ class MainActivity : ComponentActivity() {
         Label("APP UPDATES")
         Text("Check GitHub for a newer release of PokéTrivia.", color = Muted, modifier = Modifier.padding(bottom = 16.dp))
         Button(vm::checkUpdates, Modifier.fillMaxWidth()) { Icon(Icons.Default.SystemUpdate, null); Spacer(Modifier.width(8.dp)); Text("CHECK FOR UPDATES") }
-        s.update?.let { release -> TextButton({ context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.url))) }, Modifier.fillMaxWidth()) { Text("Open release ${release.tag}") } }
+        s.update?.takeIf { it.tag.removePrefix("v") != BuildConfig.VERSION_NAME }?.let { release ->
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = {
+                    val apkUrl = release.apkUrl
+                    if (apkUrl == null) {
+                        updateStatus = "This release does not contain an APK."
+                    } else {
+                        downloadingUpdate = true
+                        updateStatus = "Downloading ${release.tag}…"
+                        scope.launch {
+                            runCatching { downloadUpdateApk(context, apkUrl) }
+                                .onSuccess { apk ->
+                                    downloadingUpdate = false
+                                    updateStatus = "Download complete. Opening Android installer…"
+                                    beginInstall(apk)
+                                }
+                                .onFailure {
+                                    downloadingUpdate = false
+                                    updateStatus = "Update download failed. Check your connection and try again."
+                                }
+                        }
+                    }
+                },
+                enabled = !downloadingUpdate,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (downloadingUpdate) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Icon(Icons.Default.Download, null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (downloadingUpdate) "DOWNLOADING…" else "DOWNLOAD & INSTALL ${release.tag}")
+            }
+        }
+        updateStatus?.let { Text(it, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp)) }
         Spacer(Modifier.height(16.dp)); Text("Data and artwork provided by PokéAPI. Pokémon names and characters are trademarks of Nintendo, Game Freak, and Creatures.", color = Muted, fontSize = 12.sp)
     }
+}
+
+private suspend fun downloadUpdateApk(context: android.content.Context, url: String): File = withContext(Dispatchers.IO) {
+    val directory = File(context.cacheDir, "updates").apply { mkdirs() }
+    val destination = File(directory, "PokeTrivia-update.apk")
+    val connection = URL(url).openConnection().apply {
+        connectTimeout = 15_000
+        readTimeout = 60_000
+    }
+    connection.getInputStream().use { input ->
+        destination.outputStream().use { output -> input.copyTo(output) }
+    }
+    destination
+}
+
+private fun installApk(context: android.content.Context, apk: File) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
+    context.startActivity(
+        Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    )
 }
 
 @Composable private fun Page(title: String, back: () -> Unit, content: @Composable ColumnScope.() -> Unit) = Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {

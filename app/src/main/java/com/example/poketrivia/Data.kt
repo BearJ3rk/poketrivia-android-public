@@ -25,7 +25,17 @@ data class SpeciesResponse(
     @SerializedName("flavor_text_entries") val flavor: List<FlavorText>
 )
 data class FlavorText(@SerializedName("flavor_text") val text: String, val language: NamedResource)
-data class ReleaseResponse(@SerializedName("tag_name") val tag: String, @SerializedName("html_url") val url: String)
+data class ReleaseAsset(
+    val name: String,
+    @SerializedName("browser_download_url") val downloadUrl: String
+)
+data class ReleaseResponse(
+    @SerializedName("tag_name") val tag: String,
+    @SerializedName("html_url") val url: String,
+    val assets: List<ReleaseAsset> = emptyList()
+) {
+    val apkUrl: String? get() = assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }?.downloadUrl
+}
 
 interface PokeApi {
     @GET("api/v2/generation/{id}") suspend fun generation(@Path("id") id: Int): GenerationResponse
@@ -49,8 +59,30 @@ data class ScoreEntity(
 )
 
 @Dao interface ScoreDao {
-    @Query("SELECT * FROM scores ORDER BY score DESC, CASE WHEN durationMs = 0 THEN 1 ELSE 0 END, durationMs ASC, playedAt ASC LIMIT 100") fun leaderboard(): kotlinx.coroutines.flow.Flow<List<ScoreEntity>>
-    @Insert suspend fun insert(score: ScoreEntity)
+    @Query("""
+        SELECT s.* FROM scores s
+        WHERE NOT EXISTS (
+            SELECT 1 FROM scores better
+            WHERE better.runMode = s.runMode
+              AND lower(better.player) = lower(s.player)
+              AND (
+                  better.score > s.score
+                  OR (better.score = s.score AND better.durationMs > 0 AND (s.durationMs = 0 OR better.durationMs < s.durationMs))
+                  OR (better.score = s.score AND better.durationMs = s.durationMs AND better.id < s.id)
+              )
+        )
+        ORDER BY runMode, score DESC, CASE WHEN durationMs = 0 THEN 1 ELSE 0 END, durationMs ASC, playedAt ASC
+    """) fun leaderboard(): kotlinx.coroutines.flow.Flow<List<ScoreEntity>>
+    @Query("""
+        SELECT * FROM scores
+        WHERE runMode = :runMode AND lower(player) = lower(:player)
+        ORDER BY score DESC, CASE WHEN durationMs = 0 THEN 1 ELSE 0 END, durationMs ASC, playedAt ASC
+        LIMIT 1
+    """) suspend fun personalBest(player: String, runMode: String): ScoreEntity?
+    @Insert suspend fun insert(score: ScoreEntity): Long
+    @Update suspend fun update(score: ScoreEntity)
+    @Query("DELETE FROM scores WHERE runMode = :runMode AND lower(player) = lower(:player) AND id != :keepId")
+    suspend fun deleteOtherScores(player: String, runMode: String, keepId: Long)
 }
 
 @Database(entities = [ScoreEntity::class], version = 3, exportSchema = true)
@@ -73,5 +105,24 @@ class TriviaRepository(context: Context) {
     val api: PokeApi = Retrofit.Builder().baseUrl("https://pokeapi.co/").addConverterFactory(GsonConverterFactory.create()).build().create(PokeApi::class.java)
     private val db = Room.databaseBuilder(context, TriviaDatabase::class.java, "trivia.db").addMigrations(Migration1To2, Migration2To3).build()
     val scores = db.scores().leaderboard()
-    suspend fun save(score: ScoreEntity) = db.scores().insert(score)
+    suspend fun save(score: ScoreEntity) {
+        val dao = db.scores()
+        val best = dao.personalBest(score.player, score.runMode)
+        val keepId = if (best == null) {
+            dao.insert(score)
+        } else if (score.isBetterThan(best)) {
+            dao.update(score.copy(id = best.id))
+            best.id
+        } else {
+            best.id
+        }
+        dao.deleteOtherScores(score.player, score.runMode, keepId)
+    }
+}
+
+private fun ScoreEntity.isBetterThan(other: ScoreEntity): Boolean {
+    if (score != other.score) return score > other.score
+    if (durationMs > 0 && other.durationMs == 0L) return true
+    if (durationMs == 0L && other.durationMs > 0) return false
+    return durationMs < other.durationMs
 }

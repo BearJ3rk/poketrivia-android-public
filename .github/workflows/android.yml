@@ -21,11 +21,29 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+      - name: Restore permanent app signing key
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > app/release.keystore
       - name: Test and build installable APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          ANDROID_KEYSTORE_PATH: release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle testDebugUnitTest assembleRelease
+      - name: Test pull request build
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: gradle testDebugUnitTest assembleDebug
       - name: Name APK
         shell: bash
-        run: cp app/build/outputs/apk/debug/app-debug.apk PokeTrivia.apk
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            cp app/build/outputs/apk/release/app-release.apk PokeTrivia.apk
+          else
+            cp app/build/outputs/apk/debug/app-debug.apk PokeTrivia.apk
+          fi
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:

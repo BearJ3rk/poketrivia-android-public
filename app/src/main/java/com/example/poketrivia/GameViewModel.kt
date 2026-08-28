@@ -37,7 +37,7 @@ data class UiState(
     val elapsedMs: Long = 0,
     val cluesShown: Int = 1,
     val musicVolume: Float = 0.75f,
-    val criesVolume: Float = 0.50f,
+    val criesVolume: Float = 0.10f,
     val spotlight: PokemonSpotlight? = null,
     val message: String? = null,
     val update: ReleaseResponse? = null
@@ -54,7 +54,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
             ),
             criesVolume = preferences.getFloat(
                 "cries_volume",
-                if (preferences.getBoolean("cries_enabled", true)) 0.50f else 0f
+                if (preferences.getBoolean("cries_enabled", true)) 0.10f else 0f
             )
         )
     )

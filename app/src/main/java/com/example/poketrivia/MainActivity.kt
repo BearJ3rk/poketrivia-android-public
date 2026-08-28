@@ -109,12 +109,13 @@ class MainActivity : ComponentActivity() {
             vm.refreshSpotlight()
         }
     }
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.SpaceBetween) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
         Column(Modifier.padding(top = 28.dp)) {
             Text("WHO’S THAT", color = Muted, fontSize = 18.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
             Text("Pokémon?", color = Yellow, fontSize = 54.sp, lineHeight = 55.sp, fontWeight = FontWeight.Black)
             Text("Test your Pokédex knowledge across every region.", color = Color.White, fontSize = 19.sp, modifier = Modifier.padding(top = 12.dp))
         }
+        Spacer(Modifier.height(22.dp))
         s.spotlight?.let { spotlight ->
             Card(
                 onClick = {
@@ -144,20 +145,21 @@ class MainActivity : ComponentActivity() {
         } ?: Box(Modifier.fillMaxWidth().height(282.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(Modifier.size(30.dp))
         }
+        Spacer(Modifier.height(22.dp))
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button({ vm.navigate(Screen.SETUP) }, Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("START A RUN", fontWeight = FontWeight.Black) }
+            Button({ vm.chooseGameMode(GameMode.WHO_THAT_POKEMON) }, Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("WHO’S THAT POKÉMON", fontWeight = FontWeight.Black) }
+            Button({ vm.chooseGameMode(GameMode.NAME_THAT_POKEMON) }, Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7657D5))) { Icon(Icons.Default.Edit, null); Spacer(Modifier.width(8.dp)); Text("NAME THAT POKÉMON", fontWeight = FontWeight.Black) }
+            Button({ vm.chooseGameMode(GameMode.TYPE_MATCH) }, Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Icon(Icons.Default.Category, null); Spacer(Modifier.width(8.dp)); Text("TYPE QUIZ", fontWeight = FontWeight.Black) }
             OutlinedButton({ vm.navigate(Screen.LEADERBOARD) }, Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Default.EmojiEvents, null); Spacer(Modifier.width(8.dp)); Text("LEADERBOARD") }
             TextButton({ vm.navigate(Screen.SETTINGS) }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Settings, null); Spacer(Modifier.width(8.dp)); Text("SETTINGS") }
         }
     }
 }
 
-@Composable private fun SetupScreen(s: UiState, vm: GameViewModel) = Page("Build your run", { vm.navigate(Screen.HOME) }) {
+@Composable private fun SetupScreen(s: UiState, vm: GameViewModel) = Page(s.gameMode.label, { vm.navigate(Screen.HOME) }) {
     val regions = listOf("Kanto", "Johto", "Hoenn", "Sinnoh", "Unova", "Kalos", "Alola", "Galar", "Paldea")
     val regionsLocked = s.settings.runMode == RunMode.ENDLESS
-    Label("DIFFICULTY")
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Difficulty.entries.forEach { ChoiceChip(it.name.lowercase().replaceFirstChar(Char::uppercase), s.difficulty == it) { vm.setDifficulty(it) } } }
-    Spacer(Modifier.height(24.dp)); Label("GENERATIONS")
+    Label("GENERATIONS")
     Text(if (regionsLocked) "All regions are locked for ${s.settings.runMode.label} runs." else "Choose one, several, or all.", color = Muted, modifier = Modifier.padding(bottom = 10.dp))
     (1..9).chunked(2).forEach { row ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -214,7 +216,7 @@ class MainActivity : ComponentActivity() {
                 IconButton({ confirmExit = true }) { Icon(Icons.Default.ArrowBack, "Cancel run", tint = Color.White) }
                 Column {
                     Text("${s.settings.runMode.label.uppercase()} • ${s.index + 1} / $target", color = Muted, fontWeight = FontWeight.Bold)
-                    PokeballLives(s.livesRemaining)
+                    PokeballLives(s.livesRemaining, totalLives = s.settings.runMode.lives)
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
@@ -223,8 +225,20 @@ class MainActivity : ComponentActivity() {
             }
         }
         LinearProgressIndicator(progress = { s.index.toFloat() / target.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(vertical = 14.dp))
-        Text(if (s.difficulty == Difficulty.EASY) "Tap the Pokémon" else "Name that Pokémon", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
-        if (s.difficulty == Difficulty.EASY) EasyQuestion(q, vm, cryPlayer, s.criesVolume) else HardQuestion(q, s.cluesShown, vm)
+        when (s.gameMode) {
+            GameMode.WHO_THAT_POKEMON -> {
+                Text("Tap the Pokémon", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                EasyQuestion(q, vm, cryPlayer, s.criesVolume)
+            }
+            GameMode.NAME_THAT_POKEMON -> {
+                Text("Name that Pokémon", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                NameQuestion(q, s.cluesShown, s.availableNames, vm)
+            }
+            GameMode.TYPE_MATCH -> {
+                Text("Identify its type${if (q.answer.types.size > 1) "s" else ""}", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                TypeMatchQuestion(q, s, vm)
+            }
+        }
     }
 }
 
@@ -233,14 +247,66 @@ class MainActivity : ComponentActivity() {
     q.choices.chunked(2).forEach { row -> Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { pokemon -> Card(onClick = { cryPlayer.play(pokemon.cries?.latest ?: pokemon.cries?.legacy, criesVolume); vm.answer(pokemon.name) }, modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 5.dp), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) { AsyncImage(pokemon.sprites.other.artwork.image, pokemon.name, Modifier.fillMaxSize().padding(10.dp), contentScale = ContentScale.Fit) } } } }
 }
 
-@Composable private fun HardQuestion(q: Question, cluesShown: Int, vm: GameViewModel) {
+@Composable private fun NameQuestion(q: Question, cluesShown: Int, availableNames: List<String>, vm: GameViewModel) {
     var answer by remember(q.answer.id) { mutableStateOf("") }
+    val normalizedQuery = answer.trim().lowercase()
+    val suggestions = if (normalizedQuery.isBlank()) emptyList() else availableNames
+        .filter { it.pretty().lowercase().startsWith(normalizedQuery) }
+        .take(5)
     Column(Modifier.fillMaxSize()) {
         q.clues.take(cluesShown).forEachIndexed { i, clue -> Card(Modifier.fillMaxWidth().padding(top = 10.dp), colors = CardDefaults.cardColors(containerColor = if (i == cluesShown - 1) Color(0xFF19304D) else Panel)) { Column(Modifier.padding(16.dp)) { Text(clue, color = Color.White, fontSize = 16.sp); if (i == 2) AsyncImage(q.answer.sprites.other.artwork.shiny, "Shiny Pokémon clue", Modifier.fillMaxWidth().height(150.dp), contentScale = ContentScale.Fit) } } }
         if (cluesShown < q.clues.size) TextButton(vm::revealClue, Modifier.align(Alignment.End)) { Icon(Icons.Default.Visibility, null); Spacer(Modifier.width(6.dp)); Text("Reveal next clue") }
         Spacer(Modifier.weight(1f))
+        if (suggestions.isNotEmpty() && suggestions.none { it.pretty().equals(answer, ignoreCase = true) }) {
+            Card(Modifier.fillMaxWidth().padding(bottom = 6.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
+                suggestions.forEach { name ->
+                    TextButton({ answer = name.pretty() }, Modifier.fillMaxWidth()) {
+                        Text(name.pretty(), Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+                    }
+                }
+            }
+        }
         OutlinedTextField(answer, { answer = it }, Modifier.fillMaxWidth(), label = { Text("Pokémon name") }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { vm.answer(answer) }))
         Button({ vm.answer(answer) }, Modifier.fillMaxWidth().height(56.dp).padding(top = 8.dp)) { Text("SUBMIT", fontWeight = FontWeight.Black) }
+    }
+}
+
+private val PokemonTypes = listOf(
+    "normal", "fire", "water", "electric", "grass", "ice", "fighting", "poison", "ground",
+    "flying", "psychic", "bug", "rock", "ghost", "dragon", "dark", "steel", "fairy"
+)
+
+@Composable private fun ColumnScope.TypeMatchQuestion(q: Question, s: UiState, vm: GameViewModel) {
+    AsyncImage(
+        q.answer.sprites.image ?: q.answer.sprites.other.artwork.image,
+        "Pokémon to identify by type",
+        Modifier.fillMaxWidth().height(210.dp).padding(vertical = 8.dp),
+        contentScale = ContentScale.Fit
+    )
+    Text("Select every applicable type, then check your answer.", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+    PokemonTypes.chunked(3).forEach { row ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            row.forEach { type ->
+                val eliminated = type in s.eliminatedTypes
+                FilterChip(
+                    selected = type in s.selectedTypes,
+                    onClick = { vm.toggleType(type) },
+                    label = {
+                        Text(
+                            type.pretty(),
+                            textDecoration = if (eliminated) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                            fontSize = 12.sp
+                        )
+                    },
+                    enabled = !eliminated,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+    Spacer(Modifier.weight(1f))
+    Button(vm::submitTypes, Modifier.fillMaxWidth().height(56.dp), enabled = s.selectedTypes.isNotEmpty()) {
+        Text("NEXT", fontWeight = FontWeight.Black)
     }
 }
 
@@ -252,7 +318,8 @@ class MainActivity : ComponentActivity() {
         Text("${s.score} correct", color = Yellow, fontSize = 42.sp, fontWeight = FontWeight.Black)
         Text(formatDuration(s.elapsedMs), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Text("${s.settings.runMode.label} run", color = Muted, modifier = Modifier.padding(top = 6.dp))
-        PokeballLives(s.livesRemaining, Modifier.padding(top = 10.dp))
+        Text(s.gameMode.label, color = Muted, modifier = Modifier.padding(top = 2.dp))
+        PokeballLives(s.livesRemaining, Modifier.padding(top = 10.dp), s.settings.runMode.lives)
         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().padding(top = 28.dp), label = { Text("Trainer name") }, singleLine = true)
         Button({ vm.saveScore(name) }, Modifier.fillMaxWidth().padding(top = 10.dp).height(56.dp)) { Text("SAVE SCORE") }
         TextButton({ vm.navigate(Screen.HOME) }) { Text("Skip") }
@@ -263,25 +330,28 @@ class MainActivity : ComponentActivity() {
     val scores by vm.leaderboard.collectAsStateWithLifecycle()
     Page("Leaderboard", { vm.navigate(Screen.HOME) }) {
         if (scores.isEmpty()) Text("No scores yet. Your first run could take the crown.", color = Muted)
-        RunMode.entries.filter { it.selectable }.forEach { mode ->
-            val section = scores.filter { it.runMode == mode.name }
-                .sortedWith(compareByDescending<ScoreEntity> { it.score }.thenBy { if (it.durationMs > 0) it.durationMs else Long.MAX_VALUE })
-            Spacer(Modifier.height(18.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(mode.label.uppercase(), color = Yellow, fontSize = 15.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-                PokeballLives(mode.lives)
-            }
-            HorizontalDivider(Modifier.padding(top = 7.dp, bottom = 5.dp), color = Color(0xFF28364A))
-            if (section.isEmpty()) {
-                Text("No scores yet", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 10.dp))
-            } else {
-                section.forEachIndexed { i, item -> LeaderboardRow(i, item) }
+        GameMode.entries.forEach { gameMode ->
+            Text(gameMode.label, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 22.dp, bottom = 4.dp))
+            RunMode.entries.filter { it.selectable }.forEach { mode ->
+                val section = scores.filter { it.runMode == mode.name && it.gameMode == gameMode.name }
+                    .sortedWith(compareByDescending<ScoreEntity> { it.score }.thenBy { if (it.durationMs > 0) it.durationMs else Long.MAX_VALUE })
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(mode.label.uppercase(), color = Yellow, fontSize = 15.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                    PokeballLives(mode.lives)
+                }
+                HorizontalDivider(Modifier.padding(top = 7.dp, bottom = 5.dp), color = Color(0xFF28364A))
+                if (section.isEmpty()) {
+                    Text("No scores yet", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 10.dp))
+                } else {
+                    section.forEachIndexed { i, item -> LeaderboardRow(i, item, mode.lives) }
+                }
             }
         }
     }
 }
 
-@Composable private fun LeaderboardRow(index: Int, item: ScoreEntity) = Row(
+@Composable private fun LeaderboardRow(index: Int, item: ScoreEntity, totalLives: Int) = Row(
     Modifier.fillMaxWidth().padding(vertical = 10.dp),
     verticalAlignment = Alignment.CenterVertically
 ) {
@@ -289,7 +359,7 @@ class MainActivity : ComponentActivity() {
     Column(Modifier.weight(1f)) {
         Text(item.player, color = Color.White, fontWeight = FontWeight.Bold)
         Text("${item.difficulty.lowercase().pretty()} • ${item.generation.split(',').size} gen", color = Muted, fontSize = 12.sp)
-        PokeballLives(item.livesRemaining)
+        PokeballLives(item.livesRemaining, totalLives = totalLives)
     }
     Column(horizontalAlignment = Alignment.End) {
         Text("${item.score}", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
@@ -408,12 +478,39 @@ private fun installApk(context: android.content.Context, apk: File) {
     }
     Slider(value = volume, onValueChange = onVolumeChange, valueRange = 0f..1f, steps = 19)
 }
-@Composable private fun PokeballLives(count: Int, modifier: Modifier = Modifier) = Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+@Composable private fun PokeballLives(count: Int, modifier: Modifier = Modifier, totalLives: Int = count) = Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
     repeat(count.coerceAtLeast(0)) {
         Canvas(Modifier.size(18.dp)) {
             val outline = 1.5.dp.toPx()
+            val topColor = when (totalLives) {
+                5 -> Color(0xFF2E9DEB) // Quick Ball
+                4 -> Color(0xFFE84A4A) // Poké Ball
+                3 -> Color(0xFF3279D8) // Great Ball
+                2 -> Color(0xFF202633) // Ultra Ball
+                else -> Color(0xFF8E5AC7) // Master Ball
+            }
             drawCircle(Color.White)
-            clipRect(top = 0f, bottom = size.height / 2f) { drawCircle(Color(0xFFE84A4A)) }
+            clipRect(top = 0f, bottom = size.height / 2f) {
+                drawCircle(topColor)
+                when (totalLives) {
+                    5 -> {
+                        drawLine(Color(0xFFFFD84A), androidx.compose.ui.geometry.Offset(size.width * .18f, size.height * .12f), androidx.compose.ui.geometry.Offset(size.width * .42f, size.height * .46f), strokeWidth = outline * 1.8f)
+                        drawLine(Color(0xFFFFD84A), androidx.compose.ui.geometry.Offset(size.width * .82f, size.height * .12f), androidx.compose.ui.geometry.Offset(size.width * .58f, size.height * .46f), strokeWidth = outline * 1.8f)
+                    }
+                    3 -> {
+                        drawLine(Color(0xFFE84A4A), androidx.compose.ui.geometry.Offset(size.width * .18f, size.height * .12f), androidx.compose.ui.geometry.Offset(size.width * .38f, size.height * .47f), strokeWidth = outline * 1.7f)
+                        drawLine(Color(0xFFE84A4A), androidx.compose.ui.geometry.Offset(size.width * .82f, size.height * .12f), androidx.compose.ui.geometry.Offset(size.width * .62f, size.height * .47f), strokeWidth = outline * 1.7f)
+                    }
+                    2 -> {
+                        drawLine(Color(0xFFFFD43B), androidx.compose.ui.geometry.Offset(size.width * .25f, 0f), androidx.compose.ui.geometry.Offset(size.width * .4f, size.height * .46f), strokeWidth = outline * 2f)
+                        drawLine(Color(0xFFFFD43B), androidx.compose.ui.geometry.Offset(size.width * .75f, 0f), androidx.compose.ui.geometry.Offset(size.width * .6f, size.height * .46f), strokeWidth = outline * 2f)
+                    }
+                    1 -> {
+                        drawCircle(Color(0xFFF09AC2), radius = size.minDimension * .10f, center = androidx.compose.ui.geometry.Offset(size.width * .25f, size.height * .25f))
+                        drawCircle(Color(0xFFF09AC2), radius = size.minDimension * .10f, center = androidx.compose.ui.geometry.Offset(size.width * .75f, size.height * .25f))
+                    }
+                }
+            }
             drawCircle(Color(0xFF111827), style = Stroke(outline))
             drawLine(Color(0xFF111827), start = androidx.compose.ui.geometry.Offset(0f, size.height / 2f), end = androidx.compose.ui.geometry.Offset(size.width, size.height / 2f), strokeWidth = outline)
             drawCircle(Color.White, radius = size.minDimension * .16f)
@@ -484,7 +581,7 @@ private class CryPlayer {
 }
 
 private class BackgroundMusicPlayer(context: android.content.Context) {
-    private val mediaPlayer = MediaPlayer.create(context, R.raw.royalty_free_poke_bgm)?.apply {
+    private val mediaPlayer = MediaPlayer.create(context, R.raw.pokemon_battle_music)?.apply {
         isLooping = true
         setVolume(0.75f, 0.75f)
     }

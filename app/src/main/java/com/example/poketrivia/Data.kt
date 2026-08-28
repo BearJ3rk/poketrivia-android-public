@@ -13,7 +13,8 @@ import retrofit2.http.Url
 
 data class NamedResource(val name: String, val url: String)
 data class GenerationResponse(@SerializedName("pokemon_species") val species: List<NamedResource>)
-data class PokemonResponse(val id: Int, val name: String, val height: Int, val sprites: Sprites, val cries: Cries?)
+data class PokemonTypeSlot(val slot: Int, val type: NamedResource)
+data class PokemonResponse(val id: Int, val name: String, val height: Int, val sprites: Sprites, val cries: Cries?, val types: List<PokemonTypeSlot>)
 data class Cries(val latest: String?, val legacy: String?)
 data class Sprites(@SerializedName("front_default") val image: String?, val other: OtherSprites)
 data class OtherSprites(@SerializedName("official-artwork") val artwork: Artwork)
@@ -54,6 +55,7 @@ data class ScoreEntity(
     val generation: String,
     val durationMs: Long = 0,
     val runMode: String = "LEGACY",
+    val gameMode: String = "WHO_THAT_POKEMON",
     val livesRemaining: Int = 0,
     val playedAt: Long = System.currentTimeMillis()
 )
@@ -63,7 +65,7 @@ data class ScoreEntity(
         SELECT s.* FROM scores s
         WHERE NOT EXISTS (
             SELECT 1 FROM scores better
-            WHERE better.runMode = s.runMode
+            WHERE better.runMode = s.runMode AND better.gameMode = s.gameMode
               AND lower(better.player) = lower(s.player)
               AND (
                   better.score > s.score
@@ -71,21 +73,21 @@ data class ScoreEntity(
                   OR (better.score = s.score AND better.durationMs = s.durationMs AND better.id < s.id)
               )
         )
-        ORDER BY runMode, score DESC, CASE WHEN durationMs = 0 THEN 1 ELSE 0 END, durationMs ASC, playedAt ASC
+        ORDER BY gameMode, runMode, score DESC, CASE WHEN durationMs = 0 THEN 1 ELSE 0 END, durationMs ASC, playedAt ASC
     """) fun leaderboard(): kotlinx.coroutines.flow.Flow<List<ScoreEntity>>
     @Query("""
         SELECT * FROM scores
-        WHERE runMode = :runMode AND lower(player) = lower(:player)
+        WHERE runMode = :runMode AND gameMode = :gameMode AND lower(player) = lower(:player)
         ORDER BY score DESC, CASE WHEN durationMs = 0 THEN 1 ELSE 0 END, durationMs ASC, playedAt ASC
         LIMIT 1
-    """) suspend fun personalBest(player: String, runMode: String): ScoreEntity?
+    """) suspend fun personalBest(player: String, runMode: String, gameMode: String): ScoreEntity?
     @Insert suspend fun insert(score: ScoreEntity): Long
     @Update suspend fun update(score: ScoreEntity)
-    @Query("DELETE FROM scores WHERE runMode = :runMode AND lower(player) = lower(:player) AND id != :keepId")
-    suspend fun deleteOtherScores(player: String, runMode: String, keepId: Long)
+    @Query("DELETE FROM scores WHERE runMode = :runMode AND gameMode = :gameMode AND lower(player) = lower(:player) AND id != :keepId")
+    suspend fun deleteOtherScores(player: String, runMode: String, gameMode: String, keepId: Long)
 }
 
-@Database(entities = [ScoreEntity::class], version = 3, exportSchema = true)
+@Database(entities = [ScoreEntity::class], version = 4, exportSchema = true)
 abstract class TriviaDatabase : RoomDatabase() { abstract fun scores(): ScoreDao }
 
 private val Migration1To2 = object : Migration(1, 2) {
@@ -101,13 +103,20 @@ private val Migration2To3 = object : Migration(2, 3) {
     }
 }
 
+private val Migration3To4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE scores ADD COLUMN gameMode TEXT NOT NULL DEFAULT 'WHO_THAT_POKEMON'")
+        db.execSQL("UPDATE scores SET gameMode = 'NAME_THAT_POKEMON' WHERE difficulty = 'HARD'")
+    }
+}
+
 class TriviaRepository(context: Context) {
     val api: PokeApi = Retrofit.Builder().baseUrl("https://pokeapi.co/").addConverterFactory(GsonConverterFactory.create()).build().create(PokeApi::class.java)
-    private val db = Room.databaseBuilder(context, TriviaDatabase::class.java, "trivia.db").addMigrations(Migration1To2, Migration2To3).build()
+    private val db = Room.databaseBuilder(context, TriviaDatabase::class.java, "trivia.db").addMigrations(Migration1To2, Migration2To3, Migration3To4).build()
     val scores = db.scores().leaderboard()
     suspend fun save(score: ScoreEntity) {
         val dao = db.scores()
-        val best = dao.personalBest(score.player, score.runMode)
+        val best = dao.personalBest(score.player, score.runMode, score.gameMode)
         val keepId = if (best == null) {
             dao.insert(score)
         } else if (score.isBetterThan(best)) {
@@ -116,7 +125,7 @@ class TriviaRepository(context: Context) {
         } else {
             best.id
         }
-        dao.deleteOtherScores(score.player, score.runMode, keepId)
+        dao.deleteOtherScores(score.player, score.runMode, score.gameMode, keepId)
     }
 }
 

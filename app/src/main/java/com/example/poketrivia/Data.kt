@@ -15,7 +15,7 @@ data class NamedResource(val name: String, val url: String)
 data class GenerationResponse(@SerializedName("pokemon_species") val species: List<NamedResource>)
 data class PokemonResponse(val id: Int, val name: String, val height: Int, val sprites: Sprites, val cries: Cries?)
 data class Cries(val latest: String?, val legacy: String?)
-data class Sprites(val other: OtherSprites)
+data class Sprites(@SerializedName("front_default") val image: String?, val other: OtherSprites)
 data class OtherSprites(@SerializedName("official-artwork") val artwork: Artwork)
 data class Artwork(@SerializedName("front_default") val image: String?, @SerializedName("front_shiny") val shiny: String?)
 data class SpeciesResponse(

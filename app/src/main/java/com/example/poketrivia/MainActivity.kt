@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 private val Navy = Color(0xFF09111F)
 private val Panel = Color(0xFF121E31)
@@ -79,7 +80,7 @@ class MainActivity : ComponentActivity() {
     }
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Navy, Color(0xFF0D1D35)))).safeDrawingPadding()) {
         when (state.screen) {
-            Screen.HOME -> HomeScreen(vm)
+            Screen.HOME -> HomeScreen(state, vm)
             Screen.SETUP -> SetupScreen(state, vm)
             Screen.GAME -> GameScreen(state, vm, cryPlayer)
             Screen.RESULT -> ResultScreen(state, vm)
@@ -90,12 +91,48 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun HomeScreen(vm: GameViewModel) {
+@Composable private fun HomeScreen(s: UiState, vm: GameViewModel) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        if (s.spotlight == null) vm.refreshSpotlight()
+        while (true) {
+            delay(15_000)
+            vm.refreshSpotlight()
+        }
+    }
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.SpaceBetween) {
-        Column(Modifier.padding(top = 54.dp)) {
+        Column(Modifier.padding(top = 28.dp)) {
             Text("WHO’S THAT", color = Muted, fontSize = 18.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
             Text("Pokémon?", color = Yellow, fontSize = 54.sp, lineHeight = 55.sp, fontWeight = FontWeight.Black)
             Text("Test your Pokédex knowledge across every region.", color = Color.White, fontSize = 19.sp, modifier = Modifier.padding(top = 12.dp))
+        }
+        s.spotlight?.let { spotlight ->
+            Card(
+                onClick = {
+                    val slug = serebiiSlug(spotlight.pokemon.name)
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.serebii.net/pokemon/$slug/")))
+                },
+                colors = CardDefaults.cardColors(containerColor = Panel),
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        spotlight.pokemon.sprites.image ?: spotlight.pokemon.sprites.other.artwork.image,
+                        spotlight.pokemon.name,
+                        Modifier.size(96.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text("POKÉMON SPOTLIGHT", color = Yellow, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                        Text(spotlight.pokemon.name.pretty(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text(spotlight.fact, color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 4)
+                        Text("Tap to view on Serebii.net", color = Blue, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+                    }
+                }
+            }
+        } ?: Box(Modifier.fillMaxWidth().height(124.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(Modifier.size(30.dp))
         }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Button({ vm.navigate(Screen.SETUP) }, Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("START A RUN", fontWeight = FontWeight.Black) }
@@ -266,6 +303,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 private fun String.pretty() = replace('-', ' ').replaceFirstChar(Char::uppercase)
+private fun serebiiSlug(name: String) = when (name) {
+    "nidoran-f" -> "nidoranf"
+    "nidoran-m" -> "nidoranm"
+    "mr-mime" -> "mr.mime"
+    "mime-jr" -> "mimejr"
+    "type-null" -> "typenull"
+    "tapu-koko", "tapu-lele", "tapu-bulu", "tapu-fini" -> name.replace("-", "")
+    else -> name
+}
 private fun formatDuration(milliseconds: Long): String {
     val minutes = milliseconds / 60_000
     val seconds = (milliseconds / 1_000) % 60
@@ -319,7 +365,7 @@ private class CryPlayer {
 }
 
 private class BackgroundMusicPlayer(context: android.content.Context) {
-    private val mediaPlayer = MediaPlayer.create(context, R.raw.soft_adventure_loop)?.apply {
+    private val mediaPlayer = MediaPlayer.create(context, R.raw.royalty_free_poke_bgm)?.apply {
         isLooping = true
         setVolume(0.75f, 0.75f)
     }

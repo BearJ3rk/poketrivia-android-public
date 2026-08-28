@@ -22,6 +22,7 @@ enum class RunMode(val label: String, val questionLimit: Int?, val lives: Int, v
 }
 data class GameSettings(val runMode: RunMode = RunMode.TWENTY_FIVE)
 data class Question(val answer: PokemonResponse, val species: SpeciesResponse, val choices: List<PokemonResponse>, val clues: List<String>)
+data class PokemonSpotlight(val pokemon: PokemonResponse, val fact: String)
 data class UiState(
     val screen: Screen = Screen.HOME,
     val settings: GameSettings = GameSettings(),
@@ -37,6 +38,7 @@ data class UiState(
     val cluesShown: Int = 1,
     val musicVolume: Float = 0.75f,
     val criesVolume: Float = 0.50f,
+    val spotlight: PokemonSpotlight? = null,
     val message: String? = null,
     val update: ReleaseResponse? = null
 )
@@ -65,6 +67,21 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     private var timerJob: Job? = null
 
     fun navigate(screen: Screen) { _state.update { it.copy(screen = screen, message = null) } }
+    fun refreshSpotlight() = viewModelScope.launch {
+        runCatching {
+            val currentId = _state.value.spotlight?.pokemon?.id
+            val id = generateSequence { (1..1025).random() }.first { it != currentId }
+            val pokemon = repo.api.pokemon(id.toString())
+            val species = repo.api.species(id.toString())
+            val facts = species.flavor
+                .filter { it.language.name == "en" }
+                .map { it.text.replace(Regex("[\\n\\f]+"), " ").trim() }
+                .distinct()
+            PokemonSpotlight(pokemon, facts.randomOrNull() ?: "A mysterious Pokémon awaits in the Pokédex.")
+        }.onSuccess { spotlight ->
+            _state.update { it.copy(spotlight = spotlight) }
+        }
+    }
     fun setDifficulty(value: Difficulty) { _state.update { it.copy(difficulty = value) } }
     fun setMusicVolume(value: Float) {
         val volume = value.coerceIn(0f, 1f)
@@ -153,7 +170,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         accumulatedMs = 0L
         remainingPokemon.clear()
         sessionPool = emptyList()
-        _state.update { UiState(settings = it.settings, generations = it.generations, difficulty = it.difficulty, musicVolume = it.musicVolume, criesVolume = it.criesVolume) }
+        _state.update { UiState(settings = it.settings, generations = it.generations, difficulty = it.difficulty, musicVolume = it.musicVolume, criesVolume = it.criesVolume, spotlight = it.spotlight) }
     }
     fun saveScore(name: String) = viewModelScope.launch {
         val s = _state.value

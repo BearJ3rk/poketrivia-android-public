@@ -131,7 +131,11 @@ class MainActivity : ComponentActivity() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     AsyncImage(
-                        spotlight.pokemon.sprites.image ?: spotlight.pokemon.sprites.other.artwork.image,
+                        if (s.useOfficialArtwork) {
+                            spotlight.pokemon.sprites.other.artwork.image ?: spotlight.pokemon.sprites.image
+                        } else {
+                            spotlight.pokemon.sprites.image ?: spotlight.pokemon.sprites.other.artwork.image
+                        },
                         spotlight.pokemon.name,
                         Modifier.fillMaxWidth().height(190.dp),
                         contentScale = ContentScale.Fit
@@ -397,6 +401,14 @@ private val PokemonTypes = listOf(
         SettingVolume("Background music", "Music on every app screen", s.musicVolume, vm::setMusicVolume)
         SettingVolume("Pokémon cries", "Cry played when a Pokémon picture is tapped", s.criesVolume, vm::setCriesVolume)
         HorizontalDivider(Modifier.padding(vertical = 20.dp), color = Color(0xFF28364A))
+        Label("MAIN MENU SPOTLIGHT")
+        SettingSwitch(
+            "High-resolution artwork",
+            if (s.useOfficialArtwork) "Using official artwork" else "Using classic game sprites",
+            s.useOfficialArtwork,
+            vm::setUseOfficialArtwork
+        )
+        HorizontalDivider(Modifier.padding(vertical = 20.dp), color = Color(0xFF28364A))
         Label("APP UPDATES")
         Text("Check GitHub for a newer release of PokéTrivia.", color = Muted, modifier = Modifier.padding(bottom = 16.dp))
         Button(vm::checkUpdates, Modifier.fillMaxWidth()) { Icon(Icons.Default.SystemUpdate, null); Spacer(Modifier.width(8.dp)); Text("CHECK FOR UPDATES") }
@@ -477,6 +489,16 @@ private fun installApk(context: android.content.Context, apk: File) {
         Text("${(volume * 100).toInt()}%", color = if (volume > 0f) Yellow else Muted, fontWeight = FontWeight.Bold)
     }
     Slider(value = volume, onValueChange = onVolumeChange, valueRange = 0f..1f, steps = 19)
+}
+@Composable private fun SettingSwitch(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) = Row(
+    Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }.padding(vertical = 10.dp),
+    verticalAlignment = Alignment.CenterVertically
+) {
+    Column(Modifier.weight(1f)) {
+        Text(title, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(description, color = Muted, fontSize = 12.sp)
+    }
+    Switch(checked = checked, onCheckedChange = onCheckedChange)
 }
 @Composable private fun PokeballLives(count: Int, modifier: Modifier = Modifier, totalLives: Int = count) = Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
     repeat(count.coerceAtLeast(0)) {

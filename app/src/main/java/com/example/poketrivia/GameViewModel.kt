@@ -32,7 +32,7 @@ data class UiState(
     val screen: Screen = Screen.HOME,
     val settings: GameSettings = GameSettings(),
     val gameMode: GameMode = GameMode.WHO_THAT_POKEMON,
-    val generations: Set<Int> = (1..9).toSet(),
+    val generations: Set<Int> = setOf(1),
     val difficulty: Difficulty = Difficulty.EASY,
     val loading: Boolean = false,
     val question: Question? = null,
@@ -47,6 +47,7 @@ data class UiState(
     val eliminatedTypes: Set<String> = emptySet(),
     val musicVolume: Float = 0.75f,
     val criesVolume: Float = 0.10f,
+    val useOfficialArtwork: Boolean = true,
     val spotlight: PokemonSpotlight? = null,
     val message: String? = null,
     val update: ReleaseResponse? = null
@@ -64,7 +65,8 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
             criesVolume = preferences.getFloat(
                 "cries_volume",
                 if (preferences.getBoolean("cries_enabled", true)) 0.10f else 0f
-            )
+            ),
+            useOfficialArtwork = preferences.getBoolean("use_official_artwork", true)
         )
     )
     val state = _state.asStateFlow()
@@ -104,6 +106,10 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         val volume = value.coerceIn(0f, 1f)
         preferences.edit().putFloat("cries_volume", volume).apply()
         _state.update { it.copy(criesVolume = volume) }
+    }
+    fun setUseOfficialArtwork(value: Boolean) {
+        preferences.edit().putBoolean("use_official_artwork", value).apply()
+        _state.update { it.copy(useOfficialArtwork = value) }
     }
     fun setRunMode(value: RunMode) {
         _state.update {
@@ -226,7 +232,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         accumulatedMs = 0L
         remainingPokemon.clear()
         sessionPool = emptyList()
-        _state.update { UiState(settings = it.settings, gameMode = it.gameMode, generations = it.generations, difficulty = it.difficulty, musicVolume = it.musicVolume, criesVolume = it.criesVolume, spotlight = it.spotlight) }
+        _state.update { UiState(settings = it.settings, gameMode = it.gameMode, generations = it.generations, difficulty = it.difficulty, musicVolume = it.musicVolume, criesVolume = it.criesVolume, useOfficialArtwork = it.useOfficialArtwork, spotlight = it.spotlight) }
     }
     fun saveScore(name: String) = viewModelScope.launch {
         val s = _state.value

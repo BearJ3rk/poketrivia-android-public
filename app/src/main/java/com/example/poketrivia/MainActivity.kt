@@ -12,6 +12,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -68,6 +70,19 @@ class MainActivity : ComponentActivity() {
 
 @Composable fun PokeTriviaApp(vm: GameViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    var mistakeFlashVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(state.mistakeFlashId) {
+        if (state.mistakeFlashId > 0) {
+            mistakeFlashVisible = true
+            delay(180)
+            mistakeFlashVisible = false
+        }
+    }
+    val mistakeFlashAlpha by animateFloatAsState(
+        targetValue = if (mistakeFlashVisible) 0.18f else 0f,
+        animationSpec = tween(100),
+        label = "mistakeFlash"
+    )
     val cryPlayer = rememberCryPlayer()
     val backgroundMusic = rememberBackgroundMusicPlayer()
     val musicVolume = state.musicVolume
@@ -95,6 +110,9 @@ class MainActivity : ComponentActivity() {
             Screen.RESULT -> ResultScreen(state, vm)
             Screen.LEADERBOARD -> LeaderboardScreen(vm)
             Screen.SETTINGS -> SettingsScreen(state, vm)
+        }
+        if (mistakeFlashAlpha > 0f) {
+            Box(Modifier.fillMaxSize().background(Color.Red.copy(alpha = mistakeFlashAlpha)))
         }
         state.message?.let { Text(it, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).background(Panel, RoundedCornerShape(14.dp)).padding(12.dp), color = Color.White) }
     }
@@ -232,7 +250,7 @@ class MainActivity : ComponentActivity() {
         when (s.gameMode) {
             GameMode.WHO_THAT_POKEMON -> {
                 Text("Tap the Pokémon", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                EasyQuestion(q, vm, cryPlayer, s.criesVolume)
+                EasyQuestion(q, s.eliminatedPokemon, vm, cryPlayer, s.criesVolume)
             }
             GameMode.NAME_THAT_POKEMON -> {
                 Text("Name that Pokémon", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
@@ -246,9 +264,68 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun ColumnScope.EasyQuestion(q: Question, vm: GameViewModel, cryPlayer: CryPlayer, criesVolume: Float) {
-    Text("Which one is ${q.answer.name.pretty()}?", color = Muted, fontSize = 17.sp, modifier = Modifier.padding(vertical = 14.dp))
-    q.choices.chunked(2).forEach { row -> Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { pokemon -> Card(onClick = { cryPlayer.play(pokemon.cries?.latest ?: pokemon.cries?.legacy, criesVolume); vm.answer(pokemon.name) }, modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 5.dp), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) { AsyncImage(pokemon.sprites.other.artwork.image, pokemon.name, Modifier.fillMaxSize().padding(10.dp), contentScale = ContentScale.Fit) } } } }
+@Composable private fun ColumnScope.EasyQuestion(q: Question, eliminatedPokemon: Set<String>, vm: GameViewModel, cryPlayer: CryPlayer, criesVolume: Float) {
+    Text(
+        "Which one is",
+        color = Muted,
+        fontSize = 17.sp,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+    )
+    Text(
+        "${q.answer.name.pretty()}?",
+        color = Yellow,
+        fontSize = 36.sp,
+        lineHeight = 38.sp,
+        fontWeight = FontWeight.Black,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+    )
+    q.choices.chunked(2).forEach { row ->
+        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            row.forEach { pokemon ->
+                val eliminated = pokemon.name in eliminatedPokemon
+                Card(
+                    onClick = {
+                        cryPlayer.play(pokemon.cries?.latest ?: pokemon.cries?.legacy, criesVolume)
+                        vm.answer(pokemon.name)
+                    },
+                    enabled = !eliminated,
+                    modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 5.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Panel,
+                        disabledContainerColor = Color(0xFF351B25)
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        AsyncImage(
+                            pokemon.sprites.other.artwork.image,
+                            pokemon.name,
+                            Modifier.fillMaxSize().padding(10.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                        if (eliminated) {
+                            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)))
+                            Icon(
+                                Icons.Default.Close,
+                                "Wrong choice",
+                                tint = Color(0xFFFF5A67),
+                                modifier = Modifier.size(88.dp)
+                            )
+                            Text(
+                                "WRONG",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable private fun NameQuestion(q: Question, cluesShown: Int, availableNames: List<String>, vm: GameViewModel) {
@@ -316,7 +393,11 @@ private val PokemonTypes = listOf(
 
 @Composable private fun ResultScreen(s: UiState, vm: GameViewModel) {
     var name by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(24.dp))
         Icon(Icons.Default.EmojiEvents, null, tint = Yellow, modifier = Modifier.size(86.dp))
         Text("Run complete!", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
         Text("${s.score} correct", color = Yellow, fontSize = 42.sp, fontWeight = FontWeight.Black)
@@ -324,9 +405,25 @@ private val PokemonTypes = listOf(
         Text("${s.settings.runMode.label} run", color = Muted, modifier = Modifier.padding(top = 6.dp))
         Text(s.gameMode.label, color = Muted, modifier = Modifier.padding(top = 2.dp))
         PokeballLives(s.livesRemaining, Modifier.padding(top = 10.dp), s.settings.runMode.lives)
-        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().padding(top = 28.dp), label = { Text("Trainer name") }, singleLine = true)
+        if (s.wrongPokemon.isEmpty()) {
+            Text("Perfect run — no Pokémon missed!", color = Yellow, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 22.dp))
+        } else {
+            Card(
+                Modifier.fillMaxWidth().padding(top = 22.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("POKÉMON TO REVIEW (${s.wrongPokemon.size})", color = Yellow, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                    s.wrongPokemon.forEach { pokemon ->
+                        Text("• ${pokemon.pretty()}", color = Color.White, fontSize = 17.sp, modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+            }
+        }
+        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().padding(top = 22.dp), label = { Text("Trainer name") }, singleLine = true)
         Button({ vm.saveScore(name) }, Modifier.fillMaxWidth().padding(top = 10.dp).height(56.dp)) { Text("SAVE SCORE") }
         TextButton({ vm.navigate(Screen.HOME) }) { Text("Skip") }
+        Spacer(Modifier.height(24.dp))
     }
 }
 

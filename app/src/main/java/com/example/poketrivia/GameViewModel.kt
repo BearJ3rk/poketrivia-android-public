@@ -45,6 +45,9 @@ data class UiState(
     val cluesShown: Int = 1,
     val selectedTypes: Set<String> = emptySet(),
     val eliminatedTypes: Set<String> = emptySet(),
+    val eliminatedPokemon: Set<String> = emptySet(),
+    val wrongPokemon: List<String> = emptyList(),
+    val mistakeFlashId: Int = 0,
     val musicVolume: Float = 0.75f,
     val criesVolume: Float = 0.10f,
     val useOfficialArtwork: Boolean = true,
@@ -132,7 +135,20 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         timerJob?.cancel()
         accumulatedMs = 0L
         questionStartedAt = 0L
-        _state.update { it.copy(loading = true, screen = Screen.GAME, index = 0, score = 0, livesRemaining = s.settings.runMode.lives, elapsedMs = 0, message = null) }
+        _state.update {
+            it.copy(
+                loading = true,
+                screen = Screen.GAME,
+                index = 0,
+                score = 0,
+                livesRemaining = s.settings.runMode.lives,
+                elapsedMs = 0,
+                eliminatedPokemon = emptySet(),
+                wrongPokemon = emptyList(),
+                mistakeFlashId = 0,
+                message = null
+            )
+        }
         runCatching {
             sessionPool = s.generations
                 .flatMap { repo.api.generation(it).species.map(NamedResource::name) }
@@ -161,7 +177,17 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         val gen = species?.generation?.name?.substringAfterLast('-')?.uppercase().orEmpty()
         val clues = if (_state.value.gameMode == GameMode.NAME_THAT_POKEMON) listOf(description, "Height: ${answer.height / 10.0} m", "Shiny form", "First appeared in Generation $gen") else emptyList()
         remainingPokemon.removeFirst()
-        _state.update { it.copy(loading = false, question = Question(answer, species, choices, clues), cluesShown = 1, selectedTypes = emptySet(), eliminatedTypes = emptySet(), message = null) }
+        _state.update {
+            it.copy(
+                loading = false,
+                question = Question(answer, species, choices, clues),
+                cluesShown = 1,
+                selectedTypes = emptySet(),
+                eliminatedTypes = emptySet(),
+                eliminatedPokemon = emptySet(),
+                message = null
+            )
+        }
         startQuestionTimer()
     }
 
@@ -174,7 +200,8 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     fun submitTypes() = viewModelScope.launch {
         val current = _state.value
-        val correctTypes = current.question?.answer?.types?.map { it.type.name }?.toSet().orEmpty()
+        val question = current.question ?: return@launch
+        val correctTypes = question.answer.types.map { it.type.name }.toSet()
         if (current.selectedTypes == correctTypes) {
             stopQuestionTimer()
             val nextScore = current.score + 1
@@ -197,6 +224,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                 livesRemaining = nextLives.coerceAtLeast(0),
                 selectedTypes = it.selectedTypes - wrongSelections,
                 eliminatedTypes = it.eliminatedTypes + wrongSelections,
+                wrongPokemon = (it.wrongPokemon + question.answer.name).distinct(),
                 message = if (wrongSelections.isEmpty()) "One or more types are still missing — Poké Ball lost" else "Incorrect type crossed out — Poké Ball lost"
             )
         }
@@ -208,17 +236,57 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     fun answer(value: String) = viewModelScope.launch {
         val current = _state.value
+        val question = current.question ?: return@launch
+        val normalizedAnswer = value.trim().replace(" ", "-")
+        val correct = normalizedAnswer.equals(question.answer.name, ignoreCase = true)
+
+        if (current.gameMode == GameMode.WHO_THAT_POKEMON && !correct) {
+            if (normalizedAnswer in current.eliminatedPokemon) return@launch
+            val nextLives = current.livesRemaining - 1
+            _state.update {
+                it.copy(
+                    livesRemaining = nextLives.coerceAtLeast(0),
+                    index = if (nextLives <= 0) it.index + 1 else it.index,
+                    eliminatedPokemon = it.eliminatedPokemon + normalizedAnswer,
+                    wrongPokemon = (it.wrongPokemon + question.answer.name).distinct(),
+                    mistakeFlashId = it.mistakeFlashId + 1,
+                    message = "${normalizedAnswer.pretty()} crossed out — Poké Ball lost"
+                )
+            }
+            if (nextLives <= 0) {
+                stopQuestionTimer()
+                finishGame()
+            }
+            return@launch
+        }
+
         stopQuestionTimer()
-        val correct = value.trim().replace(" ", "-").equals(current.question?.answer?.name, ignoreCase = true)
         val nextScore = current.score + if (correct) 1 else 0
         val nextIndex = current.index + 1
         val nextLives = current.livesRemaining - if (correct) 0 else 1
         val requestedCountReached = current.settings.runMode.questionLimit?.let { nextIndex >= it } == true
         val allPokemonAnswered = remainingPokemon.isEmpty()
         if (nextLives <= 0 || requestedCountReached || allPokemonAnswered) {
-            _state.update { it.copy(score = nextScore, index = nextIndex, livesRemaining = nextLives.coerceAtLeast(0)) }; finishGame()
+            _state.update {
+                it.copy(
+                    score = nextScore,
+                    index = nextIndex,
+                    livesRemaining = nextLives.coerceAtLeast(0),
+                    wrongPokemon = if (correct) it.wrongPokemon else (it.wrongPokemon + question.answer.name).distinct()
+                )
+            }
+            finishGame()
         } else {
-            _state.update { it.copy(score = nextScore, index = nextIndex, livesRemaining = nextLives, loading = true, message = if (correct) "Correct!" else "It was ${current.question?.answer?.name} — Poké Ball lost") }
+            _state.update {
+                it.copy(
+                    score = nextScore,
+                    index = nextIndex,
+                    livesRemaining = nextLives,
+                    loading = true,
+                    wrongPokemon = if (correct) it.wrongPokemon else (it.wrongPokemon + question.answer.name).distinct(),
+                    message = if (correct) "Correct!" else "It was ${question.answer.name.pretty()} — Poké Ball lost"
+                )
+            }
             runCatching { nextQuestion() }.onFailure { _state.update { it.copy(loading = false, message = "Connection lost. Try again.") } }
         }
     }

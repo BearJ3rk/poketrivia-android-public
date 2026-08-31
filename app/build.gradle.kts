@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.poketrivia"
         minSdk = 26
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.9"
+        versionCode = 10
+        versionName = "0.10"
         buildConfigField("String", "GITHUB_REPOSITORY", "\"BearJ3rk/poketrivia-android-public\"")
     }
     val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")

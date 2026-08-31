@@ -250,7 +250,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                     eliminatedPokemon = it.eliminatedPokemon + normalizedAnswer,
                     wrongPokemon = (it.wrongPokemon + question.answer.name).distinct(),
                     mistakeFlashId = it.mistakeFlashId + 1,
-                    message = "${normalizedAnswer.pretty()} crossed out — Poké Ball lost"
+                    message = "${normalizedAnswer.displayName()} crossed out — Poké Ball lost"
                 )
             }
             if (nextLives <= 0) {
@@ -284,7 +284,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                     livesRemaining = nextLives,
                     loading = true,
                     wrongPokemon = if (correct) it.wrongPokemon else (it.wrongPokemon + question.answer.name).distinct(),
-                    message = if (correct) "Correct!" else "It was ${question.answer.name.pretty()} — Poké Ball lost"
+                    message = if (correct) "Correct!" else "It was ${question.answer.name.displayName()} — Poké Ball lost"
                 )
             }
             runCatching { nextQuestion() }.onFailure { _state.update { it.copy(loading = false, message = "Connection lost. Try again.") } }
@@ -341,3 +341,6 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 }
+
+private fun String.displayName(): String =
+    replace('-', ' ').replaceFirstChar { it.uppercase() }

@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -51,21 +52,51 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Navy = Color(0xFF09111F)
-private val Panel = Color(0xFF121E31)
+private val DarkNavy = Color(0xFF09111F)
+private val DarkPanel = Color(0xFF121E31)
 private val Yellow = Color(0xFFFFCB3C)
 private val Blue = Color(0xFF3B82F6)
-private val Muted = Color(0xFF9BA9BC)
+private val Navy: Color @Composable get() = MaterialTheme.colorScheme.background
+private val Panel: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val Muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val AppText: Color @Composable get() = MaterialTheme.colorScheme.onBackground
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge()
-        setContent { TriviaTheme { PokeTriviaApp() } }
+        setContent {
+            val vm: GameViewModel = viewModel()
+            val state by vm.state.collectAsStateWithLifecycle()
+            TriviaTheme(state.darkMode) { PokeTriviaApp(vm) }
+        }
     }
 }
 
-@Composable private fun TriviaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = darkColorScheme(primary = Yellow, secondary = Blue, background = Navy, surface = Panel, onPrimary = Navy), content = content)
+@Composable private fun TriviaTheme(darkMode: Boolean, content: @Composable () -> Unit) {
+    val colors = if (darkMode) {
+        darkColorScheme(
+            primary = Yellow,
+            secondary = Blue,
+            background = DarkNavy,
+            surface = DarkPanel,
+            onPrimary = DarkNavy,
+            onBackground = Color.White,
+            onSurface = Color.White,
+            onSurfaceVariant = Color(0xFF9BA9BC)
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(0xFF2A5CAA),
+            secondary = Blue,
+            background = Color(0xFFF4F7FC),
+            surface = Color.White,
+            onPrimary = Color.White,
+            onBackground = Color(0xFF162238),
+            onSurface = Color(0xFF162238),
+            onSurfaceVariant = Color(0xFF5F6E82)
+        )
+    }
+    MaterialTheme(colorScheme = colors, content = content)
 }
 
 @Composable fun PokeTriviaApp(vm: GameViewModel = viewModel()) {
@@ -102,7 +133,8 @@ class MainActivity : ComponentActivity() {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Navy, Color(0xFF0D1D35)))).safeDrawingPadding()) {
+    val gradientEnd = if (state.darkMode) Color(0xFF0D1D35) else Color(0xFFDCE8F8)
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Navy, gradientEnd))).safeDrawingPadding()) {
         when (state.screen) {
             Screen.HOME -> HomeScreen(state, vm)
             Screen.SETUP -> SetupScreen(state, vm)
@@ -114,7 +146,7 @@ class MainActivity : ComponentActivity() {
         if (mistakeFlashAlpha > 0f) {
             Box(Modifier.fillMaxSize().background(Color.Red.copy(alpha = mistakeFlashAlpha)))
         }
-        state.message?.let { Text(it, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).background(Panel, RoundedCornerShape(14.dp)).padding(12.dp), color = Color.White) }
+        state.message?.let { Text(it, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).background(Panel, RoundedCornerShape(14.dp)).padding(12.dp), color = AppText) }
     }
 }
 
@@ -130,8 +162,11 @@ class MainActivity : ComponentActivity() {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
         Column(Modifier.padding(top = 28.dp)) {
             Text("WHO’S THAT", color = Muted, fontSize = 18.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
-            Text("Pokémon?", color = Yellow, fontSize = 54.sp, lineHeight = 55.sp, fontWeight = FontWeight.Black)
-            Text("Test your Pokédex knowledge across every region.", color = Color.White, fontSize = 19.sp, modifier = Modifier.padding(top = 12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PokemonWordmark()
+                Text("?", color = Yellow, fontSize = 54.sp, lineHeight = 55.sp, fontWeight = FontWeight.Black)
+            }
+            Text("Test your Pokédex knowledge across every region.", color = AppText, fontSize = 19.sp, modifier = Modifier.padding(top = 12.dp))
         }
         Spacer(Modifier.height(22.dp))
         s.spotlight?.let { spotlight ->
@@ -159,7 +194,7 @@ class MainActivity : ComponentActivity() {
                         contentScale = ContentScale.Fit
                     )
                     Text("POKÉMON SPOTLIGHT", color = Yellow, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                    Text(spotlight.pokemon.name.pretty(), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Text(spotlight.pokemon.name.pretty(), color = AppText, fontSize = 24.sp, fontWeight = FontWeight.Black)
                     Text(spotlight.fact, color = Muted, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 4, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 5.dp))
                     Text("Tap to view on Serebii.net", color = Blue, fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
                 }
@@ -175,6 +210,28 @@ class MainActivity : ComponentActivity() {
             OutlinedButton({ vm.navigate(Screen.LEADERBOARD) }, Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Default.EmojiEvents, null); Spacer(Modifier.width(8.dp)); Text("LEADERBOARD") }
             TextButton({ vm.navigate(Screen.SETTINGS) }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Settings, null); Spacer(Modifier.width(8.dp)); Text("SETTINGS") }
         }
+    }
+}
+
+@Composable private fun PokemonWordmark() {
+    Box(contentAlignment = Alignment.Center) {
+        Text(
+            "Pokémon",
+            color = Color(0xFF2A5CAA),
+            fontSize = 54.sp,
+            lineHeight = 55.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = (-2).sp,
+            style = TextStyle(drawStyle = Stroke(width = 11f))
+        )
+        Text(
+            "Pokémon",
+            color = Color(0xFFFFCB05),
+            fontSize = 54.sp,
+            lineHeight = 55.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = (-2).sp
+        )
     }
 }
 
@@ -202,7 +259,7 @@ class MainActivity : ComponentActivity() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             RadioButton(s.settings.runMode == mode, { vm.setRunMode(mode) })
-            Text(mode.label, color = Color.White, modifier = Modifier.weight(1f))
+            Text(mode.label, color = AppText, modifier = Modifier.weight(1f))
             PokeballLives(mode.lives)
         }
     }
@@ -225,7 +282,7 @@ class MainActivity : ComponentActivity() {
     }
     if (s.loading || s.question == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            IconButton({ confirmExit = true }, Modifier.align(Alignment.TopStart)) { Icon(Icons.Default.ArrowBack, "Cancel run", tint = Color.White) }
+            IconButton({ confirmExit = true }, Modifier.align(Alignment.TopStart)) { Icon(Icons.Default.ArrowBack, "Cancel run", tint = AppText) }
             CircularProgressIndicator()
         }
         return
@@ -235,29 +292,29 @@ class MainActivity : ComponentActivity() {
         val target = s.settings.runMode.questionLimit?.coerceAtMost(s.availablePokemon) ?: s.availablePokemon
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton({ confirmExit = true }) { Icon(Icons.Default.ArrowBack, "Cancel run", tint = Color.White) }
+                IconButton({ confirmExit = true }) { Icon(Icons.Default.ArrowBack, "Cancel run", tint = AppText) }
                 Column {
                     Text("${s.settings.runMode.label.uppercase()} • ${s.index + 1} / $target", color = Muted, fontWeight = FontWeight.Bold)
                     PokeballLives(s.livesRemaining, totalLives = s.settings.runMode.lives)
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(formatDuration(s.elapsedMs), color = Color.White, fontWeight = FontWeight.Black)
+                Text(formatDuration(s.elapsedMs), color = AppText, fontWeight = FontWeight.Black)
                 Text("SCORE ${s.score}", color = Yellow, fontWeight = FontWeight.Black, fontSize = 12.sp)
             }
         }
         LinearProgressIndicator(progress = { s.index.toFloat() / target.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(vertical = 14.dp))
         when (s.gameMode) {
             GameMode.WHO_THAT_POKEMON -> {
-                Text("Tap the Pokémon", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("Tap the Pokémon", color = AppText, fontSize = 28.sp, fontWeight = FontWeight.Black)
                 EasyQuestion(q, s.eliminatedPokemon, vm, cryPlayer, s.criesVolume)
             }
             GameMode.NAME_THAT_POKEMON -> {
-                Text("Name that Pokémon", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("Name that Pokémon", color = AppText, fontSize = 28.sp, fontWeight = FontWeight.Black)
                 NameQuestion(q, s.cluesShown, s.availableNames, vm)
             }
             GameMode.TYPE_MATCH -> {
-                Text("Identify its type${if (q.answer.types.size > 1) "s" else ""}", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("Identify its type${if (q.answer.types.size > 1) "s" else ""}", color = AppText, fontSize = 28.sp, fontWeight = FontWeight.Black)
                 TypeMatchQuestion(q, s, vm)
             }
         }
@@ -272,15 +329,7 @@ class MainActivity : ComponentActivity() {
         textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
     )
-    Text(
-        "${q.answer.name.pretty()}?",
-        color = Yellow,
-        fontSize = 36.sp,
-        lineHeight = 38.sp,
-        fontWeight = FontWeight.Black,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-    )
+    PokemonNameLabel(q.answer.name, suffix = "?", modifier = Modifier.padding(bottom = 12.dp))
     q.choices.chunked(2).forEach { row ->
         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             row.forEach { pokemon ->
@@ -357,7 +406,43 @@ private val PokemonTypes = listOf(
     "flying", "psychic", "bug", "rock", "ghost", "dragon", "dark", "steel", "fairy"
 )
 
+private val PokemonTypeColors = mapOf(
+    "normal" to Color(0xFFA8A77A),
+    "fire" to Color(0xFFEE8130),
+    "water" to Color(0xFF6390F0),
+    "electric" to Color(0xFFF7D02C),
+    "grass" to Color(0xFF7AC74C),
+    "ice" to Color(0xFF96D9D6),
+    "fighting" to Color(0xFFC22E28),
+    "poison" to Color(0xFFA33EA1),
+    "ground" to Color(0xFFE2BF65),
+    "flying" to Color(0xFFA98FF3),
+    "psychic" to Color(0xFFF95587),
+    "bug" to Color(0xFFA6B91A),
+    "rock" to Color(0xFFB6A136),
+    "ghost" to Color(0xFF735797),
+    "dragon" to Color(0xFF6F35FC),
+    "dark" to Color(0xFF705746),
+    "steel" to Color(0xFFB7B7CE),
+    "fairy" to Color(0xFFD685AD)
+)
+
+private val TypesWithDarkText = setOf("normal", "electric", "grass", "ice", "ground", "flying", "bug", "rock", "steel", "fairy")
+
+@Composable private fun PokemonNameLabel(name: String, suffix: String = "", modifier: Modifier = Modifier) {
+    Text(
+        "${name.pretty()}$suffix",
+        color = Yellow,
+        fontSize = 36.sp,
+        lineHeight = 38.sp,
+        fontWeight = FontWeight.Black,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().then(modifier)
+    )
+}
+
 @Composable private fun ColumnScope.TypeMatchQuestion(q: Question, s: UiState, vm: GameViewModel) {
+    PokemonNameLabel(q.answer.name, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
     AsyncImage(
         q.answer.sprites.image ?: q.answer.sprites.other.artwork.image,
         "Pokémon to identify by type",
@@ -369,19 +454,39 @@ private val PokemonTypes = listOf(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             row.forEach { type ->
                 val eliminated = type in s.eliminatedTypes
-                FilterChip(
-                    selected = type in s.selectedTypes,
-                    onClick = { vm.toggleType(type) },
-                    label = {
-                        Text(
-                            type.pretty(),
-                            textDecoration = if (eliminated) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
-                            fontSize = 12.sp
+                val typeColor = PokemonTypeColors.getValue(type)
+                val labelColor = if (type in TypesWithDarkText) DarkNavy else Color.White
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    FilterChip(
+                        selected = type in s.selectedTypes,
+                        onClick = { vm.toggleType(type) },
+                        label = {
+                            Text(
+                                type.pretty(),
+                                textDecoration = if (eliminated) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                                fontSize = 12.sp
+                            )
+                        },
+                        enabled = !eliminated,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = typeColor.copy(alpha = 0.72f),
+                            labelColor = labelColor,
+                            selectedContainerColor = typeColor,
+                            selectedLabelColor = labelColor,
+                            disabledContainerColor = typeColor.copy(alpha = 0.24f),
+                            disabledLabelColor = Color.White.copy(alpha = 0.45f)
                         )
-                    },
-                    enabled = !eliminated,
-                    modifier = Modifier.weight(1f)
-                )
+                    )
+                    if (eliminated) {
+                        Icon(
+                            Icons.Default.Close,
+                            "Wrong type",
+                            tint = Color(0xFFFF3344),
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -399,9 +504,9 @@ private val PokemonTypes = listOf(
     ) {
         Spacer(Modifier.height(24.dp))
         Icon(Icons.Default.EmojiEvents, null, tint = Yellow, modifier = Modifier.size(86.dp))
-        Text("Run complete!", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+        Text("Run complete!", color = AppText, fontSize = 34.sp, fontWeight = FontWeight.Black)
         Text("${s.score} correct", color = Yellow, fontSize = 42.sp, fontWeight = FontWeight.Black)
-        Text(formatDuration(s.elapsedMs), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text(formatDuration(s.elapsedMs), color = AppText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Text("${s.settings.runMode.label} run", color = Muted, modifier = Modifier.padding(top = 6.dp))
         Text(s.gameMode.label, color = Muted, modifier = Modifier.padding(top = 2.dp))
         PokeballLives(s.livesRemaining, Modifier.padding(top = 10.dp), s.settings.runMode.lives)
@@ -415,7 +520,30 @@ private val PokemonTypes = listOf(
                 Column(Modifier.padding(16.dp)) {
                     Text("POKÉMON TO REVIEW (${s.wrongPokemon.size})", color = Yellow, fontSize = 14.sp, fontWeight = FontWeight.Black)
                     s.wrongPokemon.forEach { pokemon ->
-                        Text("• ${pokemon.pretty()}", color = Color.White, fontSize = 17.sp, modifier = Modifier.padding(top = 6.dp))
+                        Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                            Text(pokemon.pretty(), color = AppText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                Modifier.padding(top = 5.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                s.wrongPokemonTypes[pokemon].orEmpty().forEach { type ->
+                                    val typeColor = PokemonTypeColors[type] ?: Muted
+                                    val typeLabelColor = if (type in TypesWithDarkText) DarkNavy else Color.White
+                                    Surface(
+                                        color = typeColor,
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text(
+                                            type.pretty().uppercase(),
+                                            color = typeLabelColor,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Black,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -432,7 +560,7 @@ private val PokemonTypes = listOf(
     Page("Leaderboard", { vm.navigate(Screen.HOME) }) {
         if (scores.isEmpty()) Text("No scores yet. Your first run could take the crown.", color = Muted)
         GameMode.entries.forEach { gameMode ->
-            Text(gameMode.label, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 22.dp, bottom = 4.dp))
+            Text(gameMode.label, color = AppText, fontSize = 23.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 22.dp, bottom = 4.dp))
             RunMode.entries.filter { it.selectable }.forEach { mode ->
                 val section = scores.filter { it.runMode == mode.name && it.gameMode == gameMode.name }
                     .sortedWith(compareByDescending<ScoreEntity> { it.score }.thenBy { if (it.durationMs > 0) it.durationMs else Long.MAX_VALUE })
@@ -458,12 +586,12 @@ private val PokemonTypes = listOf(
 ) {
     Text("${index + 1}", color = if (index < 3) Yellow else Muted, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.width(42.dp))
     Column(Modifier.weight(1f)) {
-        Text(item.player, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(item.player, color = AppText, fontWeight = FontWeight.Bold)
         Text("${item.difficulty.lowercase().pretty()} • ${item.generation.split(',').size} gen", color = Muted, fontSize = 12.sp)
         PokeballLives(item.livesRemaining, totalLives = totalLives)
     }
     Column(horizontalAlignment = Alignment.End) {
-        Text("${item.score}", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+        Text("${item.score}", color = AppText, fontSize = 24.sp, fontWeight = FontWeight.Black)
         Text(if (item.durationMs > 0) formatDuration(item.durationMs) else "—", color = Muted, fontSize = 12.sp)
     }
 }
@@ -494,10 +622,18 @@ private val PokemonTypes = listOf(
     }
 
     Page("Settings", { vm.navigate(Screen.HOME) }) {
+        Label("APPEARANCE")
+        SettingSwitch(
+            "Dark mode",
+            if (s.darkMode) "Using the dark theme" else "Using the light theme",
+            s.darkMode,
+            vm::setDarkMode
+        )
+        HorizontalDivider(Modifier.padding(vertical = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
         Label("SOUND")
         SettingVolume("Background music", "Music on every app screen", s.musicVolume, vm::setMusicVolume)
         SettingVolume("Pokémon cries", "Cry played when a Pokémon picture is tapped", s.criesVolume, vm::setCriesVolume)
-        HorizontalDivider(Modifier.padding(vertical = 20.dp), color = Color(0xFF28364A))
+        HorizontalDivider(Modifier.padding(vertical = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
         Label("MAIN MENU SPOTLIGHT")
         SettingSwitch(
             "High-resolution artwork",
@@ -505,7 +641,7 @@ private val PokemonTypes = listOf(
             s.useOfficialArtwork,
             vm::setUseOfficialArtwork
         )
-        HorizontalDivider(Modifier.padding(vertical = 20.dp), color = Color(0xFF28364A))
+        HorizontalDivider(Modifier.padding(vertical = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
         Label("APP UPDATES")
         Text("Check GitHub for a newer release of PokéTrivia.", color = Muted, modifier = Modifier.padding(bottom = 16.dp))
         Button(vm::checkUpdates, Modifier.fillMaxWidth()) { Icon(Icons.Default.SystemUpdate, null); Spacer(Modifier.width(8.dp)); Text("CHECK FOR UPDATES") }
@@ -571,7 +707,7 @@ private fun installApk(context: android.content.Context, apk: File) {
 }
 
 @Composable private fun Page(title: String, back: () -> Unit, content: @Composable ColumnScope.() -> Unit) = Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-    IconButton(back) { Icon(Icons.Default.ArrowBack, "Back", tint = Color.White) }; Text(title, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 24.dp)); content()
+    IconButton(back) { Icon(Icons.Default.ArrowBack, "Back", tint = AppText) }; Text(title, color = AppText, fontSize = 32.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 24.dp)); content()
 }
 @Composable private fun Label(text: String) = Text(text, color = Yellow, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp, modifier = Modifier.padding(bottom = 8.dp))
 @Composable private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) = FilterChip(selected, onClick, { Text(text) }, modifier, enabled = enabled)
@@ -580,7 +716,7 @@ private fun installApk(context: android.content.Context, apk: File) {
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold)
+            Text(title, color = AppText, fontWeight = FontWeight.Bold)
             Text(description, color = Muted, fontSize = 12.sp)
         }
         Text("${(volume * 100).toInt()}%", color = if (volume > 0f) Yellow else Muted, fontWeight = FontWeight.Bold)
@@ -592,7 +728,7 @@ private fun installApk(context: android.content.Context, apk: File) {
     verticalAlignment = Alignment.CenterVertically
 ) {
     Column(Modifier.weight(1f)) {
-        Text(title, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(title, color = AppText, fontWeight = FontWeight.Bold)
         Text(description, color = Muted, fontSize = 12.sp)
     }
     Switch(checked = checked, onCheckedChange = onCheckedChange)

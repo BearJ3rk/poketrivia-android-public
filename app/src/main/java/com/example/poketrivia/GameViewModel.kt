@@ -47,10 +47,12 @@ data class UiState(
     val eliminatedTypes: Set<String> = emptySet(),
     val eliminatedPokemon: Set<String> = emptySet(),
     val wrongPokemon: List<String> = emptyList(),
+    val wrongPokemonTypes: Map<String, List<String>> = emptyMap(),
     val mistakeFlashId: Int = 0,
     val musicVolume: Float = 0.75f,
     val criesVolume: Float = 0.10f,
     val useOfficialArtwork: Boolean = true,
+    val darkMode: Boolean = true,
     val spotlight: PokemonSpotlight? = null,
     val message: String? = null,
     val update: ReleaseResponse? = null
@@ -69,7 +71,8 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                 "cries_volume",
                 if (preferences.getBoolean("cries_enabled", true)) 0.10f else 0f
             ),
-            useOfficialArtwork = preferences.getBoolean("use_official_artwork", true)
+            useOfficialArtwork = preferences.getBoolean("use_official_artwork", true),
+            darkMode = preferences.getBoolean("dark_mode", true)
         )
     )
     val state = _state.asStateFlow()
@@ -114,6 +117,10 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         preferences.edit().putBoolean("use_official_artwork", value).apply()
         _state.update { it.copy(useOfficialArtwork = value) }
     }
+    fun setDarkMode(value: Boolean) {
+        preferences.edit().putBoolean("dark_mode", value).apply()
+        _state.update { it.copy(darkMode = value) }
+    }
     fun setRunMode(value: RunMode) {
         _state.update {
             it.copy(
@@ -145,6 +152,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                 elapsedMs = 0,
                 eliminatedPokemon = emptySet(),
                 wrongPokemon = emptyList(),
+                wrongPokemonTypes = emptyMap(),
                 mistakeFlashId = 0,
                 message = null
             )
@@ -225,6 +233,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                 selectedTypes = it.selectedTypes - wrongSelections,
                 eliminatedTypes = it.eliminatedTypes + wrongSelections,
                 wrongPokemon = (it.wrongPokemon + question.answer.name).distinct(),
+                wrongPokemonTypes = it.wrongPokemonTypes + (question.answer.name to question.answer.types.map { slot -> slot.type.name }),
                 message = if (wrongSelections.isEmpty()) "One or more types are still missing — Poké Ball lost" else "Incorrect type crossed out — Poké Ball lost"
             )
         }
@@ -249,6 +258,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                     index = if (nextLives <= 0) it.index + 1 else it.index,
                     eliminatedPokemon = it.eliminatedPokemon + normalizedAnswer,
                     wrongPokemon = (it.wrongPokemon + question.answer.name).distinct(),
+                    wrongPokemonTypes = it.wrongPokemonTypes + (question.answer.name to question.answer.types.map { slot -> slot.type.name }),
                     mistakeFlashId = it.mistakeFlashId + 1,
                     message = "${normalizedAnswer.displayName()} crossed out — Poké Ball lost"
                 )
@@ -272,7 +282,9 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                     score = nextScore,
                     index = nextIndex,
                     livesRemaining = nextLives.coerceAtLeast(0),
-                    wrongPokemon = if (correct) it.wrongPokemon else (it.wrongPokemon + question.answer.name).distinct()
+                    wrongPokemon = if (correct) it.wrongPokemon else (it.wrongPokemon + question.answer.name).distinct(),
+                    wrongPokemonTypes = if (correct) it.wrongPokemonTypes else it.wrongPokemonTypes +
+                        (question.answer.name to question.answer.types.map { slot -> slot.type.name })
                 )
             }
             finishGame()
@@ -284,6 +296,8 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
                     livesRemaining = nextLives,
                     loading = true,
                     wrongPokemon = if (correct) it.wrongPokemon else (it.wrongPokemon + question.answer.name).distinct(),
+                    wrongPokemonTypes = if (correct) it.wrongPokemonTypes else it.wrongPokemonTypes +
+                        (question.answer.name to question.answer.types.map { slot -> slot.type.name }),
                     message = if (correct) "Correct!" else "It was ${question.answer.name.displayName()} — Poké Ball lost"
                 )
             }
@@ -300,7 +314,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         accumulatedMs = 0L
         remainingPokemon.clear()
         sessionPool = emptyList()
-        _state.update { UiState(settings = it.settings, gameMode = it.gameMode, generations = it.generations, difficulty = it.difficulty, musicVolume = it.musicVolume, criesVolume = it.criesVolume, useOfficialArtwork = it.useOfficialArtwork, spotlight = it.spotlight) }
+        _state.update { UiState(settings = it.settings, gameMode = it.gameMode, generations = it.generations, difficulty = it.difficulty, musicVolume = it.musicVolume, criesVolume = it.criesVolume, useOfficialArtwork = it.useOfficialArtwork, darkMode = it.darkMode, spotlight = it.spotlight) }
     }
     fun saveScore(name: String) = viewModelScope.launch {
         val s = _state.value

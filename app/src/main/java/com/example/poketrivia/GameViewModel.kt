@@ -1,14 +1,19 @@
 package com.example.poketrivia
 
 import android.app.Application
+import android.graphics.BitmapFactory
+import android.graphics.Color as AndroidColor
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.URL
 
 enum class Difficulty { EASY, HARD }
 enum class GameMode(val label: String) {
@@ -183,7 +188,14 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         } else emptyList()
         val description = species?.flavor?.firstOrNull { it.language.name == "en" }?.text?.replace(Regex("[\\n\\f]+"), " ") ?: "No Pokédex description available."
         val gen = species?.generation?.name?.substringAfterLast('-')?.uppercase().orEmpty()
-        val clues = if (_state.value.gameMode == GameMode.NAME_THAT_POKEMON) listOf(description, "Height: ${answer.height / 10.0} m", "Shiny form", "First appeared in Generation $gen") else emptyList()
+        val clues = if (_state.value.gameMode == GameMode.NAME_THAT_POKEMON) {
+            listOf(
+                description,
+                "Height: ${answer.height / 10.0} m",
+                shinyColorClue(answer.sprites.other.artwork.shiny),
+                "First appeared in Generation $gen"
+            )
+        } else emptyList()
         remainingPokemon.removeFirst()
         _state.update {
             it.copy(
@@ -197,6 +209,55 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         startQuestionTimer()
+    }
+
+    private suspend fun shinyColorClue(imageUrl: String?): String = withContext(Dispatchers.IO) {
+        if (imageUrl.isNullOrBlank()) return@withContext "Shiny colors unavailable"
+        val bitmap = runCatching {
+            URL(imageUrl).openConnection().apply {
+                connectTimeout = 10_000
+                readTimeout = 15_000
+            }.getInputStream().use { BitmapFactory.decodeStream(it) }
+        }.getOrNull() ?: return@withContext "Shiny colors unavailable"
+
+        try {
+            val counts = mutableMapOf<String, Int>()
+            val step = (minOf(bitmap.width, bitmap.height) / 60).coerceAtLeast(1)
+            val hsv = FloatArray(3)
+            for (y in 0 until bitmap.height step step) {
+                for (x in 0 until bitmap.width step step) {
+                    val pixel = bitmap.getPixel(x, y)
+                    if (AndroidColor.alpha(pixel) < 128) continue
+                    AndroidColor.colorToHSV(pixel, hsv)
+                    val colorName = shinyColorName(hsv[0], hsv[1], hsv[2])
+                    counts[colorName] = counts.getOrDefault(colorName, 0) + 1
+                }
+            }
+
+            val ranked = counts.entries.sortedByDescending { it.value }
+            val total = ranked.sumOf { it.value }.coerceAtLeast(1)
+            val primary = ranked.firstOrNull()?.key ?: return@withContext "Shiny colors unavailable"
+            val secondaryThreshold = (total * 0.15f).toInt()
+            val secondary = ranked.drop(1).firstOrNull { it.value >= secondaryThreshold }?.key
+            if (secondary == null) "Shiny color: $primary"
+            else "Shiny colors: $primary and $secondary"
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun shinyColorName(hue: Float, saturation: Float, value: Float): String = when {
+        value < 0.16f -> "black"
+        saturation < 0.12f && value > 0.88f -> "white"
+        saturation < 0.18f -> "gray"
+        hue < 15f || hue >= 345f -> "red"
+        hue < 42f && value < 0.58f -> "brown"
+        hue < 42f -> "orange"
+        hue < 68f -> "yellow"
+        hue < 170f -> "green"
+        hue < 255f -> "blue"
+        hue < 290f -> "purple"
+        else -> "pink"
     }
 
     fun toggleType(type: String) {

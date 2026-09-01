@@ -288,22 +288,42 @@ class MainActivity : ComponentActivity() {
         return
     }
     val q = s.question
-    Column(Modifier.fillMaxSize().padding(18.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 8.dp)) {
         val target = s.settings.runMode.questionLimit?.coerceAtMost(s.availablePokemon) ?: s.availablePokemon
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 IconButton({ confirmExit = true }) { Icon(Icons.Default.ArrowBack, "Cancel run", tint = AppText) }
                 Column {
-                    Text("${s.settings.runMode.label.uppercase()} • ${s.index + 1} / $target", color = Muted, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${s.index + 1} / $target",
+                        color = Muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     PokeballLives(s.livesRemaining, totalLives = s.settings.runMode.lives)
                 }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(formatDuration(s.elapsedMs), color = AppText, fontWeight = FontWeight.Black)
-                Text("SCORE ${s.score}", color = Yellow, fontWeight = FontWeight.Black, fontSize = 12.sp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("TIME", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(formatDuration(s.elapsedMs), color = AppText, fontWeight = FontWeight.Black)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("SCORE", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("${s.score}", color = Yellow, fontWeight = FontWeight.Black)
+                }
             }
         }
-        LinearProgressIndicator(progress = { s.index.toFloat() / target.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(vertical = 14.dp))
+        LinearProgressIndicator(
+            progress = { s.index.toFloat() / target.coerceAtLeast(1) },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
+        )
         when (s.gameMode) {
             GameMode.WHO_THAT_POKEMON -> {
                 Text("Tap the Pokémon", color = AppText, fontSize = 28.sp, fontWeight = FontWeight.Black)
@@ -384,7 +404,7 @@ class MainActivity : ComponentActivity() {
         .filter { it.pretty().lowercase().startsWith(normalizedQuery) }
         .take(5)
     Column(Modifier.fillMaxSize()) {
-        q.clues.take(cluesShown).forEachIndexed { i, clue -> Card(Modifier.fillMaxWidth().padding(top = 10.dp), colors = CardDefaults.cardColors(containerColor = if (i == cluesShown - 1) Color(0xFF19304D) else Panel)) { Column(Modifier.padding(16.dp)) { Text(clue, color = Color.White, fontSize = 16.sp); if (i == 2) AsyncImage(q.answer.sprites.other.artwork.shiny, "Shiny Pokémon clue", Modifier.fillMaxWidth().height(150.dp), contentScale = ContentScale.Fit) } } }
+        q.clues.take(cluesShown).forEachIndexed { i, clue -> Card(Modifier.fillMaxWidth().padding(top = 10.dp), colors = CardDefaults.cardColors(containerColor = if (i == cluesShown - 1) Color(0xFF19304D) else Panel)) { Column(Modifier.padding(16.dp)) { Text(clue, color = Color.White, fontSize = 16.sp) } } }
         if (cluesShown < q.clues.size) TextButton(vm::revealClue, Modifier.align(Alignment.End)) { Icon(Icons.Default.Visibility, null); Spacer(Modifier.width(6.dp)); Text("Reveal next clue") }
         Spacer(Modifier.weight(1f))
         if (suggestions.isNotEmpty() && suggestions.none { it.pretty().equals(answer, ignoreCase = true) }) {
